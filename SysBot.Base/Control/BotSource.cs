@@ -14,7 +14,7 @@ namespace SysBot.Base
         public bool IsRunning { get; private set; }
         public bool IsPaused { get; private set; }
 
-        private bool IsStopping { get; set; }
+        public bool IsStopping { get; set; }
 
         // Retry connection if bot crashes
         private int retryCount = 0;
@@ -62,7 +62,7 @@ namespace SysBot.Base
             IsRunning = true;
         }
 
-        public void RebootReset()
+        public void RebootAndStop()
         {
             if (IsPaused)
                 Stop(); // can't soft-resume; just re-launch
@@ -70,7 +70,7 @@ namespace SysBot.Base
             if (IsRunning || IsStopping)
                 return;
 
-            Task.Run(() => Bot.RebootResetAsync(Source.Token)
+            Task.Run(() => Bot.RebootAndStopAsync(Source.Token)
                 .ContinueWith(ReportFailure, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously)
                 .ContinueWith(_ => IsRunning = false));
 

@@ -123,7 +123,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             await HardStop().ConfigureAwait(false);
         }
 
-        public override async Task RebootReset(CancellationToken t)
+        public override async Task RebootAndStop(CancellationToken t)
         {
             await ReOpenGame(new PokeRaidHubConfig(), t).ConfigureAwait(false);
             await HardStop().ConfigureAwait(false);

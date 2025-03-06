@@ -38,7 +38,7 @@ namespace SysBot.Pokemon
             await CleanExit(CancellationToken.None).ConfigureAwait(false);
         }
 
-        public override async Task RebootReset(CancellationToken t)
+        public override async Task RebootAndStop(CancellationToken t)
         {
             await ReOpenGame(new PokeRaidHubConfig(), t).ConfigureAwait(false);
             await HardStop().ConfigureAwait(false);

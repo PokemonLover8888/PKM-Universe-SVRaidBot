@@ -6,10 +6,14 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Net;
+using System.Text;
 
 namespace SysBot.Pokemon.WinForms
 {
@@ -21,6 +25,9 @@ namespace SysBot.Pokemon.WinForms
 
         public readonly ISwitchConnectionAsync? SwitchConnection;
         public static bool IsUpdating { get; set; } = false;
+
+        private TcpListener? _tcpListener;
+        private CancellationTokenSource? _cts;
 
         public Main()
         {
@@ -65,6 +72,16 @@ namespace SysBot.Pokemon.WinForms
             Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "NotPaldea.net" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
             Task.Run(BotMonitor);
             InitUtil.InitializeStubs(Config.Mode);
+
+            // Use dynamic port allocation based on Process ID to ensure uniqueness
+            int portToUse = 55774 + (Environment.ProcessId % 1000);
+            StartTcpListener(portToUse);
+
+            // Write the port information to a file so the supervisor can find it
+            string portInfoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), $"SVRaidBot_{Environment.ProcessId}.port");
+            File.WriteAllText(portInfoPath, portToUse.ToString());
+
+            LogUtil.LogInfo($"Bot listening on port {portToUse}", "TCP");
         }
 
         private void TC_Main_SelectedIndexChanged(object sender, EventArgs e)
@@ -104,6 +121,174 @@ namespace SysBot.Pokemon.WinForms
                 }
                 await Task.Delay(2_000).ConfigureAwait(false);
             }
+        }
+
+        private void StartTcpListener(int port)
+        {
+            if (_tcpListener != null) return;
+            try
+            {
+                _cts = new CancellationTokenSource();
+                _tcpListener = new TcpListener(IPAddress.Loopback, port);
+                _tcpListener.Start();
+                LogUtil.LogInfo($"TCP Listener started on port {port}", "TCP");
+                Task.Run(() => AcceptLoop(_cts.Token));
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError($"Failed to start TCP listener on port {port}: {ex.Message}", "TCP");
+            }
+        }
+
+        private async Task AcceptLoop(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested && _tcpListener != null)
+            {
+                try
+                {
+                    var client = await _tcpListener.AcceptTcpClientAsync();
+                    if (client != null)
+                        _ = Task.Run(() => HandleClient(client, ct));
+                }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogError($"AcceptLoop error: {ex.Message}", "TCP");
+                    await Task.Delay(500);
+                }
+            }
+        }
+
+        private async Task HandleClient(TcpClient client, CancellationToken ct)
+        {
+            using (client)
+            {
+                try
+                {
+                    var stream = client.GetStream();
+                    using var reader = new StreamReader(stream, Encoding.UTF8);
+                    using var writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
+
+                    var commandLine = await reader.ReadLineAsync();
+                    if (string.IsNullOrEmpty(commandLine)) return;
+
+                    LogUtil.LogInfo($"Received command: {commandLine}", "TCP");
+                    string response = ExecuteBotCommand(commandLine.Trim());
+                    await writer.WriteLineAsync(response);
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogError($"HandleClient error: {ex.Message}", "TCP");
+                }
+            }
+        }
+
+        private string ExecuteBotCommand(string cmd)
+        {
+            switch (cmd)
+            {
+                case "StopAll":
+                    RunningEnvironment.StopAll();
+                    return "STOPPED";
+
+                case "StartAll":
+                    RunningEnvironment.InitializeStart();
+                    foreach (var c in FLP_Bots.Controls.OfType<BotController>())
+                        c.SendCommand(BotControlCommand.Start);
+                    return "STARTED";
+
+                case "IdleAll":
+                    foreach (var c in FLP_Bots.Controls.OfType<BotController>())
+                        c.SendCommand(BotControlCommand.Idle);
+                    return "IDLING";
+
+                case "ResumeAll":
+                    foreach (var c in FLP_Bots.Controls.OfType<BotController>())
+                        c.SendCommand(BotControlCommand.Resume);
+                    return "RESUMED";
+
+                case "RestartAll":
+                    foreach (var c in FLP_Bots.Controls.OfType<BotController>())
+                    {
+                        RunningEnvironment.InitializeStart();
+                        c.SendCommand(BotControlCommand.Restart);
+                    }
+                    return "RESTARTING";
+
+                case "RebootAll":
+                    foreach (var c in FLP_Bots.Controls.OfType<BotController>())
+                        c.SendCommand(BotControlCommand.RebootAndStop);
+                    return "REBOOTING";
+
+                case "Status":
+                    // Check actual status of each bot's routine
+                    foreach (var c in FLP_Bots.Controls.OfType<BotController>())
+                    {
+                        try
+                        {
+                            var botState = c.ReadBotState();
+                            // If any bot is not idle, return its status
+                            if (botState != "IDLE")
+                            {
+                                return botState;
+                            }
+                        }
+                        catch
+                        {
+                            return "ERROR"; // Error reading state
+                        }
+                    }
+                    return "IDLE"; // All bots are idle
+
+                case "IsReady":
+                    // Check if all bots are connected to their Switch consoles
+                    foreach (var c in FLP_Bots.Controls.OfType<BotController>())
+                    {
+                        try
+                        {
+                            var botSource = c.GetBot();
+                            if (botSource == null)
+                                return "NOT_READY";
+
+                            // If running but not connected, it's not ready
+                            if (botSource.IsRunning && !botSource.Bot.Connection.Connected)
+                                return "NOT_READY";
+                        }
+                        catch
+                        {
+                            return "NOT_READY";
+                        }
+                    }
+                    return "READY"; // All bots are connected or not running
+
+                case "RefreshMap":
+                    foreach (var c in FLP_Bots.Controls.OfType<BotController>())
+                        c.SendCommand(BotControlCommand.RefreshMap, false);
+                    return "REFRESHED";
+
+                default:
+                    return $"Unknown command: {cmd}";
+            }
+        }
+
+        private void StopTcpListener()
+        {
+            try
+            {
+                // Delete port info file as an extra precaution
+                string portInfoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), $"SVRaidBot_{Environment.ProcessId}.port");
+                if (File.Exists(portInfoPath))
+                    File.Delete(portInfoPath);
+
+                _cts?.Cancel();
+                _tcpListener?.Stop();
+                _cts = null;
+                _tcpListener = null;
+            }
+            catch { }
         }
 
         private void LoadControls()
@@ -204,6 +389,18 @@ namespace SysBot.Pokemon.WinForms
             {
                 return;
             }
+            if (IsUpdating) return;
+            StopTcpListener();
+
+            // Delete the port info file
+            try
+            {
+                string portInfoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), $"SVRaidBot_{Environment.ProcessId}.port");
+                if (File.Exists(portInfoPath))
+                    File.Delete(portInfoPath);
+            }
+            catch { /* Ignore cleanup errors */ }
+
             SaveCurrentConfig();
             var bots = RunningEnvironment;
             if (!bots.IsRunning)
@@ -248,7 +445,7 @@ namespace SysBot.Pokemon.WinForms
                 WinFormsUtil.Alert("No bots configured, but all supporting services have been started.");
         }
 
-        private void B_RebootReset_Click(object sender, EventArgs e)
+        private void B_RebootAndStop_Click(object sender, EventArgs e)
         {
             B_Stop_Click(sender, e);
             Task.Run(async () =>
@@ -257,7 +454,7 @@ namespace SysBot.Pokemon.WinForms
                 SaveCurrentConfig();
                 LogUtil.LogInfo("Restarting all the consoles...", "Form");
                 RunningEnvironment.InitializeStart();
-                SendAll(BotControlCommand.RebootReset);
+                SendAll(BotControlCommand.RebootAndStop);
                 Tab_Logs.Select();
                 if (Bots.Count == 0)
                     WinFormsUtil.Alert("No bots configured, but all supporting services have been issued the reboot command.");
@@ -536,8 +733,8 @@ namespace SysBot.Pokemon.WinForms
             B_Start.BackColor = StartGreen;
             B_Start.ForeColor = ElegantWhite;
 
-            B_RebootReset.BackColor = RebootBlue;
-            B_RebootReset.ForeColor = ElegantWhite;
+            B_RebootAndStop.BackColor = RebootBlue;
+            B_RebootAndStop.ForeColor = ElegantWhite;
 
             B_RefreshMap.BackColor = RefreshMap;
             B_RefreshMap.ForeColor = StartGreen;
@@ -613,8 +810,8 @@ namespace SysBot.Pokemon.WinForms
             B_Start.BackColor = StartGreen;
             B_Start.ForeColor = ElegantWhite;
 
-            B_RebootReset.BackColor = RebootBlue;
-            B_RebootReset.ForeColor = ElegantWhite;
+            B_RebootAndStop.BackColor = RebootBlue;
+            B_RebootAndStop.ForeColor = ElegantWhite;
 
             B_RefreshMap.BackColor = RefreshMap;
             B_RefreshMap.ForeColor = StartGreen;
@@ -687,8 +884,8 @@ namespace SysBot.Pokemon.WinForms
             B_Start.BackColor = StartGreen;
             B_Start.ForeColor = ElegantWhite;
 
-            B_RebootReset.BackColor = RebootBlue;
-            B_RebootReset.ForeColor = ElegantWhite;
+            B_RebootAndStop.BackColor = RebootBlue;
+            B_RebootAndStop.ForeColor = ElegantWhite;
 
             B_RefreshMap.BackColor = RefreshMap;
             B_RefreshMap.ForeColor = StartGreen;
@@ -763,8 +960,8 @@ namespace SysBot.Pokemon.WinForms
             B_Start.BackColor = StartGreen;
             B_Start.ForeColor = ElegantWhite;
 
-            B_RebootReset.BackColor = RebootBlue;
-            B_RebootReset.ForeColor = ElegantWhite;
+            B_RebootAndStop.BackColor = RebootBlue;
+            B_RebootAndStop.ForeColor = ElegantWhite;
 
             B_RefreshMap.BackColor = RefreshMap;
             B_RefreshMap.ForeColor = StartGreen;
@@ -838,8 +1035,8 @@ namespace SysBot.Pokemon.WinForms
             B_Start.BackColor = StartGreen;
             B_Start.ForeColor = ElegantWhite;
 
-            B_RebootReset.BackColor = RebootBlue;
-            B_RebootReset.ForeColor = ElegantWhite;
+            B_RebootAndStop.BackColor = RebootBlue;
+            B_RebootAndStop.ForeColor = ElegantWhite;
 
             B_RefreshMap.BackColor = RefreshMap;
             B_RefreshMap.ForeColor = StartGreen;

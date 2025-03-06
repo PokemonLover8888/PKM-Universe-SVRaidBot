@@ -151,13 +151,19 @@ namespace SysBot.Pokemon.WinForms
                 return;
             }
             var bot = GetBot();
+            if (bot == null)
+            {
+                LogUtil.LogError("Bot is null!", "BotController");
+                return;
+            }
+
             switch (cmd)
             {
                 case BotControlCommand.Idle: bot.Pause(); break;
                 case BotControlCommand.Start: bot.Start(); break;
                 case BotControlCommand.Stop: bot.Stop(); break;
                 case BotControlCommand.Resume: bot.Resume(); break;
-                case BotControlCommand.RebootReset: bot.RebootReset(); break;
+                case BotControlCommand.RebootAndStop: bot.RebootAndStop(); break;
                 case BotControlCommand.RefreshMap: bot.RefreshMap(); break;
                 case BotControlCommand.Restart:
                     {
@@ -175,15 +181,73 @@ namespace SysBot.Pokemon.WinForms
             }
         }
 
-        private BotSource<PokeBotState> GetBot()
+        public string ReadBotState()
         {
-            if (Runner == null)
-                throw new ArgumentNullException(nameof(Runner));
+            try
+            {
+                var botSource = GetBot();
+                if (botSource == null)
+                    return "ERROR";
 
-            var bot = Runner.GetBot(State);
-            if (bot == null)
-                throw new ArgumentNullException(nameof(bot));
-            return bot;
+                var bot = botSource.Bot;
+                if (bot == null)
+                    return "ERROR";
+
+                // Check if bot is in a transition state
+                if (botSource.IsStopping)
+                    return "STOPPING";
+
+                // If paused but not fully transitioned to idle state yet
+                if (botSource.IsPaused)
+                {
+                    // Check for transitioning to idle vs fully idle
+                    if (bot.Config?.CurrentRoutineType != PokeRoutineType.Idle)
+                        return "IDLING"; // Still transitioning to idle
+                    else
+                        return "IDLE"; // Fully idle
+                }
+
+                // If bot is running but disconnected, it might be rebooting
+                if (botSource.IsRunning && !bot.Connection.Connected)
+                    return "REBOOTING";
+
+                // Determine state based on routine config
+                var cfg = bot.Config;
+                if (cfg == null)
+                    return "UNKNOWN";
+
+                // Look at the actual current routine type
+                if (cfg.CurrentRoutineType == PokeRoutineType.Idle)
+                    return "IDLE";
+
+                // Return the actual routine type
+                return cfg.CurrentRoutineType.ToString();
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError($"Error reading bot state: {ex.Message}", "BotController");
+                return "ERROR";
+            }
+        }
+
+        public BotSource<PokeBotState> GetBot()
+        {
+            try
+            {
+                if (Runner == null)
+                    return null;
+
+                var bot = Runner.GetBot(State);
+                if (bot == null)
+                    return null;
+
+                return bot;
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError($"Error getting bot: {ex.Message}", "BotController");
+                return null;
+            }
         }
 
         private void BotController_MouseEnter(object? sender, EventArgs e) => BackColor = Color.LightSkyBlue;
@@ -213,7 +277,7 @@ namespace SysBot.Pokemon.WinForms
         Idle,
         Resume,
         Restart,
-        RebootReset,
+        RebootAndStop,
         RefreshMap,
     }
 

@@ -49,7 +49,7 @@ namespace SysBot.Pokemon.WinForms
             RTB_Logs = new RichTextBox();
             B_Stop = new Button();
             B_Start = new Button();
-            B_RebootReset = new Button();
+            B_RebootAndStop = new Button();
             updater = new Button();
             ButtonPanel = new Panel();
             B_RefreshMap = new Button();
@@ -246,23 +246,23 @@ namespace SysBot.Pokemon.WinForms
             B_Start.UseVisualStyleBackColor = false;
             B_Start.Click += B_Start_Click;
             // 
-            // B_RebootReset
+            // B_RebootAndStop
             // 
-            B_RebootReset.BackColor = Color.PowderBlue;
-            B_RebootReset.FlatStyle = FlatStyle.Popup;
-            B_RebootReset.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            B_RebootReset.ForeColor = Color.SteelBlue;
-            B_RebootReset.Image = Resources.refresh;
-            B_RebootReset.ImageAlign = ContentAlignment.MiddleLeft;
-            B_RebootReset.Location = new Point(301, 9);
-            B_RebootReset.Margin = new Padding(0);
-            B_RebootReset.Name = "B_RebootReset";
-            B_RebootReset.Size = new Size(88, 28);
-            B_RebootReset.TabIndex = 2;
-            B_RebootReset.Text = "Reset Bot";
-            B_RebootReset.TextAlign = ContentAlignment.MiddleRight;
-            B_RebootReset.UseVisualStyleBackColor = false;
-            B_RebootReset.Click += B_RebootReset_Click;
+            B_RebootAndStop.BackColor = Color.PowderBlue;
+            B_RebootAndStop.FlatStyle = FlatStyle.Popup;
+            B_RebootAndStop.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            B_RebootAndStop.ForeColor = Color.SteelBlue;
+            B_RebootAndStop.Image = Resources.refresh;
+            B_RebootAndStop.ImageAlign = ContentAlignment.MiddleLeft;
+            B_RebootAndStop.Location = new Point(301, 9);
+            B_RebootAndStop.Margin = new Padding(0);
+            B_RebootAndStop.Name = "B_RebootAndStop";
+            B_RebootAndStop.Size = new Size(88, 28);
+            B_RebootAndStop.TabIndex = 2;
+            B_RebootAndStop.Text = "Reset Bot";
+            B_RebootAndStop.TextAlign = ContentAlignment.MiddleRight;
+            B_RebootAndStop.UseVisualStyleBackColor = false;
+            B_RebootAndStop.Click += B_RebootAndStop_Click;
             // 
             // updater
             // 
@@ -287,7 +287,7 @@ namespace SysBot.Pokemon.WinForms
             ButtonPanel.BackColor = SystemColors.Control;
             ButtonPanel.Controls.Add(B_RefreshMap);
             ButtonPanel.Controls.Add(updater);
-            ButtonPanel.Controls.Add(B_RebootReset);
+            ButtonPanel.Controls.Add(B_RebootAndStop);
             ButtonPanel.Controls.Add(B_Stop);
             ButtonPanel.Controls.Add(B_Start);
             ButtonPanel.Location = new Point(249, 0);
@@ -354,7 +354,7 @@ namespace SysBot.Pokemon.WinForms
         private FlowLayoutPanel FLP_Bots;
         private ComboBox CB_Protocol;
         private ComboBox comboBox1;
-        private Button B_RebootReset;
+        private Button B_RebootAndStop;
         private Panel ButtonPanel;
         private Button updater;
         private Button B_RefreshMap;
