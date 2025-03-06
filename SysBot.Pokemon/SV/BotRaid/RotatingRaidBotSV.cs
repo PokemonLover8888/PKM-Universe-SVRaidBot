@@ -81,6 +81,8 @@ namespace SysBot.Pokemon.SV.BotRaid
         private static readonly int BlueberryDensCount = 0;
         private readonly int InvalidDeliveryGroupCount = 0;
         private bool shouldRefreshMap = false;
+        public static bool HasErrored { get; set; } = false;
+
 
         public override async Task MainLoop(CancellationToken token)
         {
@@ -114,6 +116,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             catch (Exception e)
             {
                 Log(e.Message);
+                HasErrored = true; 
             }
             finally
             {

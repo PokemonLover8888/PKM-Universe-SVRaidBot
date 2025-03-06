@@ -157,6 +157,23 @@ namespace SysBot.Pokemon.WinForms
                 return;
             }
 
+            // Reset error state for relevant commands
+            if (cmd == BotControlCommand.Start || cmd == BotControlCommand.Resume ||
+                cmd == BotControlCommand.Restart || cmd == BotControlCommand.RebootAndStop)
+            {
+                // Reset error flag if using RotatingRaidBot
+                try
+                {
+                    // Use the full namespace
+                    SysBot.Pokemon.SV.BotRaid.RotatingRaidBotSV.HasErrored = false;
+                    LogUtil.LogInfo("Reset HasErrored flag", "BotController");
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogError($"Failed to reset error flag: {ex.Message}", "BotController");
+                }
+            }
+
             switch (cmd)
             {
                 case BotControlCommand.Idle: bot.Pause(); break;

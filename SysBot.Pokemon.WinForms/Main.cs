@@ -195,6 +195,8 @@ namespace SysBot.Pokemon.WinForms
                     return "STOPPED";
 
                 case "StartAll":
+                    // Reset error state when starting
+                    SysBot.Pokemon.SV.BotRaid.RotatingRaidBotSV.HasErrored = false;
                     RunningEnvironment.InitializeStart();
                     foreach (var c in FLP_Bots.Controls.OfType<BotController>())
                         c.SendCommand(BotControlCommand.Start);
@@ -206,11 +208,15 @@ namespace SysBot.Pokemon.WinForms
                     return "IDLING";
 
                 case "ResumeAll":
+                    // Reset error state when resuming
+                    SysBot.Pokemon.SV.BotRaid.RotatingRaidBotSV.HasErrored = false;
                     foreach (var c in FLP_Bots.Controls.OfType<BotController>())
                         c.SendCommand(BotControlCommand.Resume);
                     return "RESUMED";
 
                 case "RestartAll":
+                    // Reset error state when restarting
+                    SysBot.Pokemon.SV.BotRaid.RotatingRaidBotSV.HasErrored = false;
                     foreach (var c in FLP_Bots.Controls.OfType<BotController>())
                     {
                         RunningEnvironment.InitializeStart();
@@ -219,6 +225,8 @@ namespace SysBot.Pokemon.WinForms
                     return "RESTARTING";
 
                 case "RebootAll":
+                    // Reset error state when rebooting
+                    SysBot.Pokemon.SV.BotRaid.RotatingRaidBotSV.HasErrored = false;
                     foreach (var c in FLP_Bots.Controls.OfType<BotController>())
                         c.SendCommand(BotControlCommand.RebootAndStop);
                     return "REBOOTING";
@@ -244,25 +252,109 @@ namespace SysBot.Pokemon.WinForms
                     return "IDLE"; // All bots are idle
 
                 case "IsReady":
-                    // Check if all bots are connected to their Switch consoles
+                    // First check - are there any configured bots?
+                    if (FLP_Bots.Controls.OfType<BotController>().Count() == 0)
+                    {
+                        LogUtil.LogInfo("No bots are configured", "TCP");
+                        return "NOT_READY";
+                    }
+
+                    // Second check - static error flag
+                    try
+                    {
+                        if (SysBot.Pokemon.SV.BotRaid.RotatingRaidBotSV.HasErrored)
+                        {
+                            LogUtil.LogInfo("Static HasErrored flag is true", "TCP");
+                            return "NOT_READY";
+                        }
+                    }
+                    catch { /* Ignore if not available */ }
+
+                    // Third check - scan log records for recent errors
+                    // If any error message was logged in the last 10 minutes, consider the bot not ready
+                    // This ensures we detect post-crash scenarios even when IsRunning is false
+                    try
+                    {
+                        // Check the RTB_Logs text for recent error messages
+                        string logText = RTB_Logs.Text;
+                        if (!string.IsNullOrEmpty(logText))
+                        {
+                            // First check for the most definitive crash message
+                            if (logText.Contains("Bot has crashed"))
+                            {
+                                LogUtil.LogInfo("Found 'Bot has crashed' in logs", "TCP");
+                                return "NOT_READY";
+                            }
+
+                            // Then check for ending message
+                            if (logText.Contains("Ending RotatingRaidBotSV loop"))
+                            {
+                                LogUtil.LogInfo("Found 'Ending RotatingRaidBotSV loop' in logs", "TCP");
+                                return "NOT_READY";
+                            }
+
+                            // Check if there are connection errors in recent logs
+                            if (logText.Contains("Connection error"))
+                            {
+                                LogUtil.LogInfo("Found 'Connection error' in logs", "TCP");
+                                return "NOT_READY";
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUtil.LogError($"Error checking logs: {ex.Message}", "TCP");
+                    }
+
+                    // Fourth check - inspect each bot's state
                     foreach (var c in FLP_Bots.Controls.OfType<BotController>())
                     {
                         try
                         {
                             var botSource = c.GetBot();
                             if (botSource == null)
+                            {
+                                LogUtil.LogInfo("Bot source is null", "TCP");
                                 return "NOT_READY";
+                            }
 
-                            // If running but not connected, it's not ready
-                            if (botSource.IsRunning && !botSource.Bot.Connection.Connected)
+                            // Check if the bot is in a known error state
+                            string state = c.ReadBotState();
+                            if (state == "ERROR" || state == "STOPPING")
+                            {
+                                LogUtil.LogInfo($"Bot state is {state}", "TCP");
                                 return "NOT_READY";
+                            }
+
+                            // Check for any connection issues
+                            try
+                            {
+                                if (botSource.Bot == null || botSource.Bot.Connection == null)
+                                {
+                                    LogUtil.LogInfo("Bot or Bot.Connection is null", "TCP");
+                                    return "NOT_READY";
+                                }
+
+                                if (!botSource.Bot.Connection.Connected)
+                                {
+                                    LogUtil.LogInfo("Bot is not connected", "TCP");
+                                    return "NOT_READY";
+                                }
+                            }
+                            catch
+                            {
+                                LogUtil.LogInfo("Exception checking connection status", "TCP");
+                                return "NOT_READY";
+                            }
                         }
-                        catch
+                        catch (Exception ex)
                         {
+                            LogUtil.LogInfo($"Exception while checking bot: {ex.Message}", "TCP");
                             return "NOT_READY";
                         }
                     }
-                    return "READY"; // All bots are connected or not running
+
+                    return "READY"; // All checks passed, bot is ready
 
                 case "RefreshMap":
                     foreach (var c in FLP_Bots.Controls.OfType<BotController>())
@@ -434,6 +526,9 @@ namespace SysBot.Pokemon.WinForms
 
         private void B_Start_Click(object sender, EventArgs e)
         {
+            // Reset error state when starting
+            SV.BotRaid.RotatingRaidBotSV.HasErrored = false;
+
             SaveCurrentConfig();
 
             LogUtil.LogInfo("Starting all bots...", "Form");
