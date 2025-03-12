@@ -20,6 +20,7 @@ using static SysBot.Base.SwitchButton;
 using static SysBot.Pokemon.RotatingRaidSettingsSV;
 using static SysBot.Pokemon.SV.BotRaid.Blocks;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 
 namespace SysBot.Pokemon.SV.BotRaid
 {
@@ -2704,10 +2705,44 @@ namespace SysBot.Pokemon.SV.BotRaid
             return Regex.Replace(input, @"<:[a-zA-Z0-9_]+:[0-9]+>", "").Trim();
         }
 
+        private const string PUBLIC_KEY = @"-----BEGIN PUBLIC KEY-----
+                                            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArFbz7xXyQtO0j5JfcVW4
+                                            lcIO3/+kL0GuNN4GgdZHNLWu6OX4Sv0BypvMOqdOTrGMMj+/v/1tRWamUh1qRSN+
+                                            lmRsNLxj5A6kdwZk+UIU2LC6X3Y192FyVAvV/nYFgvdoyUzF1agvaTP7C7g8F3vH
+                                            /zbGZdaH/4ZqKfBTU+NebCASaL+z+b7oIyl3j0RKdBAm5MJjYhSwj6j+1DpFbNgj
+                                            ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
+                                            5AlAy18QKMi3y3vyvJ4wZnuY+gpsaTsuTlSau6FxpVzxosvv4kh9x1HVaoX2iGSh
+                                            7QIDAQAB
+                                            -----END PUBLIC KEY-----";
+
+        private static string? EncryptRaidCode(string code)
+        {
+            try
+            {
+                using RSA rsa = RSA.Create();
+                rsa.ImportFromPem(PUBLIC_KEY);
+                byte[] dataToEncrypt = Encoding.UTF8.GetBytes(code);
+                byte[] encryptedData = rsa.Encrypt(dataToEncrypt, RSAEncryptionPadding.OaepSHA256);
+                return Convert.ToBase64String(encryptedData);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Encryption error: {ex.Message}");
+                return null;
+            }
+        }
+
         private async Task CurrentRaidInfo(List<string>? names, string code, bool hatTrick, bool disband, bool upnext, bool raidstart, string? imageUrl, bool lobbyFull, CancellationToken token)
         {
             if (!Settings.RaidSettings.JoinSharedRaidsProgram)
                 return;
+
+            string? encryptedCode = null;
+            if (!string.IsNullOrEmpty(code) && code != "FREE FOR ALL" && code != "IJ0LTU")
+            {
+                encryptedCode = EncryptRaidCode(code);
+            }
+
             var raidInfo = new
             {
                 RaidEmbedTitle = CleanEmojiStrings(RaidEmbedInfoHelpers.RaidEmbedTitle),
@@ -2725,7 +2760,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 SpecialRewards = CleanEmojiStrings(RaidEmbedInfoHelpers.SpecialRewards),
                 RaidEmbedInfoHelpers.ScaleNumber,
                 Names = names,
-                Code = code,
+                Code_encrypted = encryptedCode,
                 HatTrick = hatTrick,
                 Disband = disband,
                 UpNext = upnext,
