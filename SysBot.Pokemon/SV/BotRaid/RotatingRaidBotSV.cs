@@ -2671,7 +2671,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
             if (!disband && names is null && !upnext)
             {
-                embed.AddField(Settings.EmbedToggles.IncludeCountdown ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**" : $"**Waiting in lobby!**", $"Raid Code: **{code}**", true);
+                embed.AddField(Settings.EmbedToggles.IncludeCountdown ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**" : $"**Waiting in lobby!**", $"Raid Code: ||**{code}**||", true);
             }
             if (!disband && names is not null && !upnext)
             {
