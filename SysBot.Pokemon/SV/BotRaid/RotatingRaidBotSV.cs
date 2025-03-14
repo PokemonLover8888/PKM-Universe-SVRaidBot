@@ -21,6 +21,7 @@ using static SysBot.Pokemon.RotatingRaidSettingsSV;
 using static SysBot.Pokemon.SV.BotRaid.Blocks;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
+using pkNX.Structures.FlatBuffers;
 
 namespace SysBot.Pokemon.SV.BotRaid
 {
@@ -32,6 +33,7 @@ namespace SysBot.Pokemon.SV.BotRaid
         public static Dictionary<string, List<(int GroupID, int Index, string DenIdentifier)>> SpeciesToGroupIDMap =
         new(StringComparer.OrdinalIgnoreCase);
         private static readonly HttpClient httpClient = new HttpClient();
+        private Dictionary<(ushort Species, short Form), RaidBossMechanicsInfo> RaidBossMechanicsData = new();
 
         public RotatingRaidBotSV(PokeBotState cfg, PokeRaidHub<PK9> hub) : base(cfg)
         {
@@ -43,6 +45,13 @@ namespace SysBot.Pokemon.SV.BotRaid
         {
             public string OT { get; set; }
             public int RaidCount { get; set; }
+        }
+
+        private class RaidBossMechanicsInfo
+        {
+            public byte ShieldHpTrigger { get; set; }
+            public byte ShieldTimeTrigger { get; set; }
+            public List<(short Action, short Timing, short Value, ushort MoveId)> ExtraActions { get; set; } = new();
         }
 
         private int LobbyError;
@@ -358,7 +367,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                                 return;
                             }
 
-                            isRecoveringFromReboot = false; 
+                            isRecoveringFromReboot = false;
                             Log("Successfully recovered online connectivity after reboot.");
                         }
 
@@ -2239,6 +2248,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 nidPointer[2] = Offsets.LinkTradePartnerNIDPointer[2] + p * 0x8;
                 TeraNIDOffsets[p] = await SwitchConnection.PointerAll(nidPointer, token).ConfigureAwait(false);
             }
+            await LoadRaidBossMechanics(token).ConfigureAwait(false);
             Log("Caching offsets complete!");
         }
 
@@ -2669,6 +2679,15 @@ namespace SysBot.Pokemon.SV.BotRaid
                 embed.AddField(" **__Special Rewards__**", string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.SpecialRewards}") ? "No Rewards To Display" : $"{RaidEmbedInfoHelpers.SpecialRewards}", true);
                 RaidEmbedInfoHelpers.SpecialRewards = string.Empty;
             }
+            if (!disband && !upnext && !raidstart && Settings.ActiveRaids[RotationCount].DifficultyLevel == 7)
+            {
+                // Try to get the raid boss mechanics for 7-star raids
+                string mechanicsInfo = GetRaidBossMechanics();
+                if (!string.IsNullOrEmpty(mechanicsInfo))
+                {
+                    embed.AddField("**__7★ Raid Mechanics__**", mechanicsInfo, false);
+                }
+            }
             if (!disband && names is null && !upnext)
             {
                 embed.AddField(Settings.EmbedToggles.IncludeCountdown ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**" : $"**Waiting in lobby!**", $"Raid Code: ||**{code}**||", true);
@@ -2698,6 +2717,136 @@ namespace SysBot.Pokemon.SV.BotRaid
             EchoUtil.RaidEmbed(imageBytes, fileName, embed);
         }
 
+        private string GetRaidBossMechanics()
+        {
+            if (Settings.ActiveRaids[RotationCount].DifficultyLevel != 7)
+                return string.Empty;
+
+            StringBuilder mechanics = new();
+
+            try
+            {
+                var species = (ushort)Settings.ActiveRaids[RotationCount].Species;
+                var form = (byte)Settings.ActiveRaids[RotationCount].SpeciesForm;
+                if (RaidBossMechanicsData.TryGetValue((species, form), out var mechanicsInfo))
+                {
+                    // Shield activation
+                    if (mechanicsInfo.ShieldHpTrigger > 0 && mechanicsInfo.ShieldTimeTrigger > 0)
+                    {
+                        mechanics.AppendLine("**Shield Activation:**");
+                        mechanics.AppendLine($"• {mechanicsInfo.ShieldHpTrigger}% HP Remaining");
+                        mechanics.AppendLine($"• {mechanicsInfo.ShieldTimeTrigger}% Time Remaining");
+                    }
+                    if (mechanicsInfo.ExtraActions.Count > 0)
+                    {
+                        mechanics.AppendLine("**Other Actions:**");
+                        var moveNames = GameInfo.GetStrings(1).Move;
+
+                        foreach (var (action, timing, value, moveId) in mechanicsInfo.ExtraActions)
+                        {
+                            var type = timing == 0 ? "Time" : "HP";
+
+                            switch (action)
+                            {
+                                case 1: // BOSS_STATUS_RESET
+                                    mechanics.AppendLine($"• Resets Raid Boss' Stat Changes at {value}% {type} Remaining");
+                                    break;
+
+                                case 2: // PLAYER_STATUS_RESET
+                                    mechanics.AppendLine($"• Resets Player's Stat Changes at {value}% {type} Remaining");
+                                    break;
+
+                                case 3: // WAZA (Move)
+                                    var moveName = moveId < moveNames.Count ? moveNames[moveId] : $"Move #{moveId}";
+                                    mechanics.AppendLine($"• Uses {moveName} at {value}% {type} Remaining");
+                                    break;
+
+                                case 4: // GEM_COUNT
+                                    mechanics.AppendLine($"• Reduces Tera Orb Charge at {value}% {type} Remaining");
+                                    break;
+
+                                default:
+                                    mechanics.AppendLine($"• Unknown action ({action}) at {value}% {type} Remaining");
+                                    break;
+                            }
+                        }
+                    }
+
+                    return mechanics.ToString();
+                }
+                else
+                {
+                    return string.Empty;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error retrieving raid boss mechanics: {ex.Message}");
+                // Return empty string in case of error
+                return string.Empty;
+            }
+        }
+
+        private async Task LoadRaidBossMechanics(CancellationToken token)
+        {
+            try
+            {
+                RaidBossMechanicsData.Clear();
+                var BaseBlockKeyPointer = await SwitchConnection.PointerAll(Offsets.BlockKeyPointer, token).ConfigureAwait(false);
+                byte[] deliveryRaidFlatbuffer = await ReadBlockDefault(
+                    BaseBlockKeyPointer,
+                    RaidCrawler.Core.Structures.Offsets.BCATRaidBinaryLocation,
+                    "raid_enemy_array",
+                    false,
+                    token
+                ).ConfigureAwait(false);
+
+                var tableEncounters = FlatBufferConverter.DeserializeFrom<pkNX.Structures.FlatBuffers.Gen9.DeliveryRaidEnemyTableArray>(deliveryRaidFlatbuffer);
+
+                if (tableEncounters?.Table != null)
+                {
+
+                    foreach (var entry in tableEncounters.Table)
+                    {
+                        if (entry.Info?.Difficulty == 7 && entry.Info.BossPokePara != null && entry.Info.BossDesc != null)
+                        {
+                            var mechanicsInfo = new RaidBossMechanicsInfo
+                            {
+                                ShieldHpTrigger = (byte)entry.Info.BossDesc.PowerChargeTrigerHp,
+                                ShieldTimeTrigger = (byte)entry.Info.BossDesc.PowerChargeTrigerTime
+                            };
+
+                            var actions = new[] {
+                        entry.Info.BossDesc.ExtraAction1,
+                        entry.Info.BossDesc.ExtraAction2,
+                        entry.Info.BossDesc.ExtraAction3,
+                        entry.Info.BossDesc.ExtraAction4,
+                        entry.Info.BossDesc.ExtraAction5,
+                        entry.Info.BossDesc.ExtraAction6
+                    };
+
+                            foreach (var action in actions)
+                            {
+                                if (action.Action != 0 && action.Value != 0)
+                                {
+                                    mechanicsInfo.ExtraActions.Add((action.Action, action.Timing, action.Value, action.Wazano));
+                                }
+                            }
+                            RaidBossMechanicsData[(entry.Info.BossPokePara.DevId, entry.Info.BossPokePara.FormId)] = mechanicsInfo;
+                        }
+                    }
+                }
+                else
+                {
+                    Log("Failed to deserialize raid data for boss mechanics");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error loading raid boss mechanics: {ex.Message}");
+            }
+        }
+
         private static string CleanEmojiStrings(string input)
         {
             if (string.IsNullOrEmpty(input))
@@ -2707,13 +2856,13 @@ namespace SysBot.Pokemon.SV.BotRaid
 
         private const string PUBLIC_KEY = @"-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArFbz7xXyQtO0j5JfcVW4
- lcIO3/+kL0GuNN4GgdZHNLWu6OX4Sv0BypvMOqdOTrGMMj+/v/1tRWamUh1qRSN+
- lmRsNLxj5A6kdwZk+UIU2LC6X3Y192FyVAvV/nYFgvdoyUzF1agvaTP7C7g8F3vH
- /zbGZdaH/4ZqKfBTU+NebCASaL+z+b7oIyl3j0RKdBAm5MJjYhSwj6j+1DpFbNgj
- ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
- 5AlAy18QKMi3y3vyvJ4wZnuY+gpsaTsuTlSau6FxpVzxosvv4kh9x1HVaoX2iGSh
- 7QIDAQAB
- -----END PUBLIC KEY-----";
+lcIO3/+kL0GuNN4GgdZHNLWu6OX4Sv0BypvMOqdOTrGMMj+/v/1tRWamUh1qRSN+
+lmRsNLxj5A6kdwZk+UIU2LC6X3Y192FyVAvV/nYFgvdoyUzF1agvaTP7C7g8F3vH
+/zbGZdaH/4ZqKfBTU+NebCASaL+z+b7oIyl3j0RKdBAm5MJjYhSwj6j+1DpFbNgj
+ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
+5AlAy18QKMi3y3vyvJ4wZnuY+gpsaTsuTlSau6FxpVzxosvv4kh9x1HVaoX2iGSh
+7QIDAQAB
+-----END PUBLIC KEY-----";
 
         private static string? EncryptRaidCode(string code)
         {
