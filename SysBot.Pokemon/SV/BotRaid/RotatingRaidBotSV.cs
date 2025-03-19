@@ -2408,9 +2408,10 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
         }
 
-        private async Task EnqueueEmbed(List<string>? names, string message, bool hatTrick, bool disband, bool upnext, bool raidstart, CancellationToken token)
+        private async Task EnqueueEmbed(List<string>? names, string message, bool hatTrick, bool disband, bool upnext, bool raidstart, CancellationToken token, bool isRaidStartingEmbed = false)
         {
             string code = string.Empty;
+            SharedRaidCodeHandler.ClearRaidTracking();
 
             // Determine if the raid is a "Free For All" based on the settings and conditions
             if (Settings.ActiveRaids[RotationCount].IsCoded && EmptyRaid < Settings.LobbyOptions.EmptyRaidLimit)
@@ -2443,6 +2444,8 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             byte[]? imageBytes = null;
             string fileName = string.Empty;
+            // Define a condition for raid starting embeds with countdown 
+            bool isRaidStartingWithCountdown = (isRaidStartingEmbed || (!disband && names is null && !upnext && !raidstart && Settings.EmbedToggles.IncludeCountdown));
 
             if (!disband && names is not null && !upnext && Settings.EmbedToggles.TakeScreenshot)
             {
@@ -2475,7 +2478,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                     Log($"Error while capturing screenshots: {ex.Message}");
                 }
             }
-            else if (Settings.EmbedToggles.TakeScreenshot && !upnext)
+            else if (Settings.EmbedToggles.TakeScreenshot && !upnext && !isRaidStartingWithCountdown)
             {
                 try
                 {
@@ -2690,7 +2693,24 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
             if (!disband && names is null && !upnext)
             {
-                embed.AddField(Settings.EmbedToggles.IncludeCountdown ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**" : $"**Waiting in lobby!**", $"Raid Code: ||**{code}**||", true);
+                if (code == "Free For All")
+                {
+                    embed.AddField(
+                        Settings.EmbedToggles.IncludeCountdown
+                            ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
+                            : $"**Waiting in lobby!**",
+                        $"**FREE FOR ALL**",
+                        true);
+                }
+                else
+                {
+                    embed.AddField(
+                        Settings.EmbedToggles.IncludeCountdown
+                            ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
+                            : $"**Waiting in lobby!**",
+                        $"Click the 🎮 reaction below to receive the raid code via DM",
+                        true);
+                }
             }
             if (!disband && names is not null && !upnext)
             {
@@ -2714,7 +2734,32 @@ namespace SysBot.Pokemon.SV.BotRaid
                 embed.ThumbnailUrl = turl;
                 embed.WithImageUrl($"attachment://{fileName}");
             }
-            EchoUtil.RaidEmbed(imageBytes, fileName, embed);
+
+            var raidMessage = await EchoUtil.RaidEmbed(imageBytes, fileName, embed);
+
+            // Only add reaction to the initial raid announcement that has a code
+            // Check that:
+            // 1. It's not a "Free For All" raid
+            // 2. It's not a raid that's starting (names is null)
+            // 3. It's not an upcoming raid announcement
+            // 4. It's not a raid that has started (players list)
+            // 5. It's not a disbanded raid
+            bool isInitialCodedRaidAnnouncement =
+                raidMessage != null &&
+                code != "Free For All" &&
+                names is null &&
+                !upnext &&
+                !raidstart &&
+                !disband;
+
+            if (isInitialCodedRaidAnnouncement)
+            {
+                // Store message info for reaction handling
+                SharedRaidCodeHandler.UpdateActiveRaid(raidMessage.Id, raidMessage.Channel.Id, code);
+
+                // Add the controller reaction
+                await raidMessage.AddReactionAsync(new Emoji("🎮"));
+            }
         }
 
         private string GetRaidBossMechanics()
