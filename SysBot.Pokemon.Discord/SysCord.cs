@@ -60,7 +60,7 @@ namespace SysBot.Pokemon.Discord
                        | GatewayIntents.MessageContent
                        | GatewayIntents.GuildMessageReactions
                        | GatewayIntents.GuildMembers,
-                MessageCacheSize = 500, 
+                MessageCacheSize = 500,
                 AlwaysDownloadUsers = true,
                 ConnectionTimeout = 30000,
             });
@@ -214,7 +214,59 @@ namespace SysBot.Pokemon.Discord
             // Subscribe a handler to see if a message invokes a command.
             _client.Ready += LoadLoggingAndEcho;
             _client.MessageReceived += HandleMessageAsync;
+            _client.ReactionAdded += HandleReactionAddedAsync;
             _client.ReactionAdded += ExtraCommandUtil<T>.HandleReactionAsync;
+        }
+
+        private async Task HandleReactionAddedAsync(Cacheable<IUserMessage, ulong> cachedMessage,
+            Cacheable<IMessageChannel, ulong> originChannel, SocketReaction reaction)
+        {
+            // Ignore reactions from bots (including our own)
+            if (reaction.User.Value.IsBot)
+                return;
+
+            // Check if this is a raid code request (🎮 reaction)
+            if (reaction.Emote.Name != "🎮")
+                return;
+
+            // Check if this message is our current active raid
+            if (!SharedRaidCodeHandler.IsActiveRaidMessage(reaction.MessageId))
+                return;
+
+            // Get the raid code
+            var code = SharedRaidCodeHandler.GetCurrentRaidCode();
+            if (string.IsNullOrEmpty(code))
+                return;
+
+            try
+            {
+                // Send DM with the code
+                var dmChannel = await reaction.User.Value.CreateDMChannelAsync();
+                await dmChannel.SendMessageAsync($"Here's your raid code: **{code}**\nPlease join quickly!");
+
+                // Remove the user's reaction to keep things tidy (if we have permission)
+                try
+                {
+                    var channel = await _client.GetChannelAsync(SharedRaidCodeHandler.GetCurrentChannelId()) as IMessageChannel;
+                    if (channel != null)
+                    {
+                        var message = await channel.GetMessageAsync(reaction.MessageId) as IUserMessage;
+                        if (message != null)
+                        {
+                            await message.RemoveReactionAsync(reaction.Emote, reaction.UserId);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Just log but don't interrupt - removing the reaction is just for cleanliness
+                    Log(new LogMessage(LogSeverity.Warning, "RaidCode", $"Failed to remove reaction: {ex.Message}"));
+                }
+            }
+            catch (Exception ex)
+            {
+                Log(new LogMessage(LogSeverity.Error, "RaidCode", $"Failed to send raid code DM: {ex.Message}"));
+            }
         }
 
         private async Task HandleMessageAsync(SocketMessage arg)

@@ -1,6 +1,7 @@
 ﻿using Discord;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace SysBot.Base
 {
@@ -8,7 +9,7 @@ namespace SysBot.Base
     {
         public static readonly List<Action<string>> Forwarders = new();
         public static readonly List<Action<string, Embed>> EmbedForwarders = new();
-        public static readonly List<Action<byte[], string, EmbedBuilder>> RaidForwarders = new();
+        public static readonly List<Func<byte[], string, EmbedBuilder, Task<IUserMessage>>> RaidForwarders = new();
 
         public static void Echo(string message)
         {
@@ -65,13 +66,15 @@ namespace SysBot.Base
             LogUtil.LogInfo(message, "Echo");
         }
 
-        public static void RaidEmbed(byte[] bytes, string fileName, EmbedBuilder embeds)
+        public static async Task<IUserMessage> RaidEmbed(byte[] bytes, string fileName, EmbedBuilder embeds, string raidCode = "")
         {
+            IUserMessage? sentMessage = null;
+
             foreach (var fwd in RaidForwarders)
             {
                 try
                 {
-                    fwd(bytes, fileName, embeds);
+                    sentMessage = await fwd(bytes, fileName, embeds);
                 }
                 catch (Exception ex)
                 {
@@ -79,6 +82,8 @@ namespace SysBot.Base
                     LogUtil.LogSafe(ex, "Echo");
                 }
             }
+
+            return sentMessage;
         }
     }
 }
