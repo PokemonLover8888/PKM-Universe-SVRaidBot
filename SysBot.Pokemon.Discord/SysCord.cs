@@ -60,7 +60,7 @@ namespace SysBot.Pokemon.Discord
                        | GatewayIntents.MessageContent
                        | GatewayIntents.GuildMessageReactions
                        | GatewayIntents.GuildMembers,
-                MessageCacheSize = 500, 
+                MessageCacheSize = 500,
                 AlwaysDownloadUsers = true,
                 ConnectionTimeout = 30000,
             });
@@ -219,7 +219,7 @@ namespace SysBot.Pokemon.Discord
         }
 
         private async Task HandleReactionAddedAsync(Cacheable<IUserMessage, ulong> cachedMessage,
-              Cacheable<IMessageChannel, ulong> originChannel, SocketReaction reaction)
+            Cacheable<IMessageChannel, ulong> originChannel, SocketReaction reaction)
         {
             // Ignore reactions from bots (including our own)
             if (reaction.User.Value.IsBot)
@@ -268,7 +268,6 @@ namespace SysBot.Pokemon.Discord
                 Log(new LogMessage(LogSeverity.Error, "RaidCode", $"Failed to send raid code DM: {ex.Message}"));
             }
         }
-
 
         private async Task HandleMessageAsync(SocketMessage arg)
         {

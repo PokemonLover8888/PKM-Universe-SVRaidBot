@@ -33,7 +33,15 @@ namespace SysBot.Pokemon.SV.BotRaid
         public static Dictionary<string, List<(int GroupID, int Index, string DenIdentifier)>> SpeciesToGroupIDMap =
         new(StringComparer.OrdinalIgnoreCase);
         private static readonly HttpClient httpClient = new HttpClient();
+
         private Dictionary<(ushort Species, short Form), RaidBossMechanicsInfo> RaidBossMechanicsData = new();
+
+        private class RaidBossMechanicsInfo
+        {
+            public byte ShieldHpTrigger { get; set; }
+            public byte ShieldTimeTrigger { get; set; }
+            public List<(short Action, short Timing, short Value, ushort MoveId)> ExtraActions { get; set; } = new();
+        }
 
         public RotatingRaidBotSV(PokeBotState cfg, PokeRaidHub<PK9> hub) : base(cfg)
         {
@@ -45,13 +53,6 @@ namespace SysBot.Pokemon.SV.BotRaid
         {
             public string OT { get; set; }
             public int RaidCount { get; set; }
-        }
-
-        private class RaidBossMechanicsInfo
-        {
-            public byte ShieldHpTrigger { get; set; }
-            public byte ShieldTimeTrigger { get; set; }
-            public List<(short Action, short Timing, short Value, ushort MoveId)> ExtraActions { get; set; } = new();
         }
 
         private int LobbyError;
@@ -364,7 +365,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                                 return;
                             }
 
-                            isRecoveringFromReboot = false; 
+                            isRecoveringFromReboot = false;
                             Log("Successfully recovered online connectivity after reboot.");
                         }
 
@@ -772,8 +773,8 @@ namespace SysBot.Pokemon.SV.BotRaid
                     try
                     {
                         await Task.Delay(5_000, token);
-                        await EnqueueEmbed(null, "", false, false, false, false, token).ConfigureAwait(false);
-                        success = true;
+                        await EnqueueEmbed(null, "", false, false, false, false, token, true).ConfigureAwait(false);
+                success = true;
                         break;
                     }
                     catch (Exception ex)
@@ -2245,6 +2246,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 nidPointer[2] = Offsets.LinkTradePartnerNIDPointer[2] + p * 0x8;
                 TeraNIDOffsets[p] = await SwitchConnection.PointerAll(nidPointer, token).ConfigureAwait(false);
             }
+            // Load the 7 Star raid boss mechanics
             await LoadRaidBossMechanics(token).ConfigureAwait(false);
             Log("Caching offsets complete!");
         }
@@ -2405,9 +2407,10 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
         }
 
-        private async Task EnqueueEmbed(List<string>? names, string message, bool hatTrick, bool disband, bool upnext, bool raidstart, CancellationToken token)
+        private async Task EnqueueEmbed(List<string>? names, string message, bool hatTrick, bool disband, bool upnext, bool raidstart, CancellationToken token, bool isRaidStartingEmbed = false)
         {
             string code = string.Empty;
+            SharedRaidCodeHandler.ClearRaidTracking();
 
             // Determine if the raid is a "Free For All" based on the settings and conditions
             if (Settings.ActiveRaids[RotationCount].IsCoded && EmptyRaid < Settings.LobbyOptions.EmptyRaidLimit)
@@ -2441,6 +2444,9 @@ namespace SysBot.Pokemon.SV.BotRaid
             byte[]? imageBytes = null;
             string fileName = string.Empty;
 
+            // Define a condition for raid starting embeds with countdown 
+            bool isRaidStartingWithCountdown = (isRaidStartingEmbed || (!disband && names is null && !upnext && !raidstart && Settings.EmbedToggles.IncludeCountdown));
+
             if (!disband && names is not null && !upnext && Settings.EmbedToggles.TakeScreenshot)
             {
                 try
@@ -2472,7 +2478,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                     Log($"Error while capturing screenshots: {ex.Message}");
                 }
             }
-            else if (Settings.EmbedToggles.TakeScreenshot && !upnext)
+            else if (Settings.EmbedToggles.TakeScreenshot && !upnext && !isRaidStartingWithCountdown)
             {
                 try
                 {
@@ -2687,7 +2693,24 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
             if (!disband && names is null && !upnext)
             {
-                embed.AddField(Settings.EmbedToggles.IncludeCountdown ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**" : $"**Waiting in lobby!**", $"Raid Code: **{code}**", true);
+                if (code == "Free For All")
+                {
+                    embed.AddField(
+                        Settings.EmbedToggles.IncludeCountdown
+                            ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
+                            : $"**Waiting in lobby!**",
+                        $"**FREE FOR ALL**",
+                        true);
+                }
+                else
+                {
+                    embed.AddField(
+                        Settings.EmbedToggles.IncludeCountdown
+                            ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
+                            : $"**Waiting in lobby!**",
+                        $"Click the 🎮 reaction below to receive the raid code via DM",
+                        true);
+                }
             }
             if (!disband && names is not null && !upnext)
             {
@@ -2711,7 +2734,32 @@ namespace SysBot.Pokemon.SV.BotRaid
                 embed.ThumbnailUrl = turl;
                 embed.WithImageUrl($"attachment://{fileName}");
             }
-            EchoUtil.RaidEmbed(imageBytes, fileName, embed);
+
+            var raidMessage = await EchoUtil.RaidEmbed(imageBytes, fileName, embed);
+
+            // Only add reaction to the initial raid announcement that has a code
+            // Check that:
+            // 1. It's not a "Free For All" raid
+            // 2. It's not a raid that's starting (names is null)
+            // 3. It's not an upcoming raid announcement
+            // 4. It's not a raid that has started (players list)
+            // 5. It's not a disbanded raid
+            bool isInitialCodedRaidAnnouncement =
+                raidMessage != null &&
+                code != "Free For All" &&
+                names is null &&
+                !upnext &&
+                !raidstart &&
+                !disband;
+
+            if (isInitialCodedRaidAnnouncement)
+            {
+                // Store message info for reaction handling
+                SharedRaidCodeHandler.UpdateActiveRaid(raidMessage.Id, raidMessage.Channel.Id, code);
+
+                // Add the controller reaction
+                await raidMessage.AddReactionAsync(new Emoji("🎮"));
+            }
         }
 
         private string GetRaidBossMechanics()
@@ -2788,6 +2836,7 @@ namespace SysBot.Pokemon.SV.BotRaid
         {
             try
             {
+                // Clear existing data
                 RaidBossMechanicsData.Clear();
                 var BaseBlockKeyPointer = await SwitchConnection.PointerAll(Offsets.BlockKeyPointer, token).ConfigureAwait(false);
                 byte[] deliveryRaidFlatbuffer = await ReadBlockDefault(
@@ -2807,6 +2856,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                     {
                         if (entry.Info?.Difficulty == 7 && entry.Info.BossPokePara != null && entry.Info.BossDesc != null)
                         {
+                            // Create mechanics info object
                             var mechanicsInfo = new RaidBossMechanicsInfo
                             {
                                 ShieldHpTrigger = (byte)entry.Info.BossDesc.PowerChargeTrigerHp,
@@ -2852,14 +2902,14 @@ namespace SysBot.Pokemon.SV.BotRaid
         }
 
         private const string PUBLIC_KEY = @"-----BEGIN PUBLIC KEY-----
-                                            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArFbz7xXyQtO0j5JfcVW4
-                                            lcIO3/+kL0GuNN4GgdZHNLWu6OX4Sv0BypvMOqdOTrGMMj+/v/1tRWamUh1qRSN+
-                                            lmRsNLxj5A6kdwZk+UIU2LC6X3Y192FyVAvV/nYFgvdoyUzF1agvaTP7C7g8F3vH
-                                            /zbGZdaH/4ZqKfBTU+NebCASaL+z+b7oIyl3j0RKdBAm5MJjYhSwj6j+1DpFbNgj
-                                            ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
-                                            5AlAy18QKMi3y3vyvJ4wZnuY+gpsaTsuTlSau6FxpVzxosvv4kh9x1HVaoX2iGSh
-                                            7QIDAQAB
-                                            -----END PUBLIC KEY-----";
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArFbz7xXyQtO0j5JfcVW4
+lcIO3/+kL0GuNN4GgdZHNLWu6OX4Sv0BypvMOqdOTrGMMj+/v/1tRWamUh1qRSN+
+lmRsNLxj5A6kdwZk+UIU2LC6X3Y192FyVAvV/nYFgvdoyUzF1agvaTP7C7g8F3vH
+/zbGZdaH/4ZqKfBTU+NebCASaL+z+b7oIyl3j0RKdBAm5MJjYhSwj6j+1DpFbNgj
+ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
+5AlAy18QKMi3y3vyvJ4wZnuY+gpsaTsuTlSau6FxpVzxosvv4kh9x1HVaoX2iGSh
+7QIDAQAB
+-----END PUBLIC KEY-----";
 
         private static string? EncryptRaidCode(string code)
         {
@@ -2868,7 +2918,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 using RSA rsa = RSA.Create();
                 rsa.ImportFromPem(PUBLIC_KEY);
                 byte[] dataToEncrypt = Encoding.UTF8.GetBytes(code);
-                byte[] encryptedData = rsa.Encrypt(dataToEncrypt, RSAEncryptionPadding.OaepSHA256);
+                byte[] encryptedData = rsa.Encrypt(dataToEncrypt, RSAEncryptionPadding.Pkcs1);
                 return Convert.ToBase64String(encryptedData);
             }
             catch (Exception ex)

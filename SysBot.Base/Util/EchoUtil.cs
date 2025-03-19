@@ -82,6 +82,7 @@ namespace SysBot.Base
                     LogUtil.LogSafe(ex, "Echo");
                 }
             }
+
             return sentMessage;
         }
     }
