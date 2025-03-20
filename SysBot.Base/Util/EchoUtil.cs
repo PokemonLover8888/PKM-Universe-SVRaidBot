@@ -47,14 +47,12 @@ namespace SysBot.Base
                         if (string.IsNullOrEmpty(markurl))
                             markurl = "https://i.imgur.com/T8vEiIk.jpg";
                     }
-
                     var author = new EmbedAuthorBuilder { IconUrl = markurl, Name = result ? "Match found!" : "Unwanted match..." };
                     var embed = new EmbedBuilder
                     {
                         Color = result ? Color.Teal : Color.Red,
                         ThumbnailUrl = url
                     }.WithAuthor(author).WithDescription(message);
-
                     fwd(ping, embed.Build());
                 }
                 catch (Exception ex)
@@ -66,15 +64,16 @@ namespace SysBot.Base
             LogUtil.LogInfo(message, "Echo");
         }
 
-        public static async Task<IUserMessage> RaidEmbed(byte[] bytes, string fileName, EmbedBuilder embeds, string raidCode = "")
+        public static async Task<List<IUserMessage>> RaidEmbed(byte[] bytes, string fileName, EmbedBuilder embeds)
         {
-            IUserMessage? sentMessage = null;
-
+            List<IUserMessage> sentMessages = new List<IUserMessage>();
             foreach (var fwd in RaidForwarders)
             {
                 try
                 {
-                    sentMessage = await fwd(bytes, fileName, embeds);
+                    var message = await fwd(bytes, fileName, embeds);
+                    if (message != null)
+                        sentMessages.Add(message);
                 }
                 catch (Exception ex)
                 {
@@ -82,8 +81,7 @@ namespace SysBot.Base
                     LogUtil.LogSafe(ex, "Echo");
                 }
             }
-
-            return sentMessage;
+            return sentMessages;
         }
     }
 }

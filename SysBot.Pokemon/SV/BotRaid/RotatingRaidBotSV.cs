@@ -2411,7 +2411,19 @@ namespace SysBot.Pokemon.SV.BotRaid
         private async Task EnqueueEmbed(List<string>? names, string message, bool hatTrick, bool disband, bool upnext, bool raidstart, CancellationToken token, bool isRaidStartingEmbed = false)
         {
             string code = string.Empty;
-            SharedRaidCodeHandler.ClearRaidTracking();
+
+            // If this is a raid ending, starting with players, or disbanding, update reactions first
+            if (disband || (names is not null && !upnext) || upnext)
+            {
+                // Update to red X emoji - do this BEFORE clearing tracking
+                await SharedRaidCodeHandler.UpdateReactionsOnAllMessages(false, token);
+            }
+
+            // Only clear tracking when starting a new raid or when the raid is specifically over
+            if ((!disband && names is null && !upnext && !raidstart) || upnext)
+            {
+                SharedRaidCodeHandler.ClearAllRaidTracking();
+            }
 
             // Determine if the raid is a "Free For All" based on the settings and conditions
             if (Settings.ActiveRaids[RotationCount].IsCoded && EmptyRaid < Settings.LobbyOptions.EmptyRaidLimit)
@@ -2424,6 +2436,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 // If it's a "Free For All", set the code as such
                 code = "Free For All";
             }
+
             // Apply delay only if the raid was added by RA command, not a Mystery Shiny Raid, and has a code
             if (Settings.ActiveRaids[RotationCount].AddedByRACommand &&
                 Settings.ActiveRaids[RotationCount].Title != "Mystery Shiny Raid" &&
@@ -2431,8 +2444,8 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 await Task.Delay((int)Settings.EmbedToggles.RequestEmbedTime, token).ConfigureAwait(false);
             }
+
             // Description can only be up to 4096 characters.
-            //var description = Settings.ActiveRaids[RotationCount].Description.Length > 0 ? string.Join("\n", Settings.ActiveRaids[RotationCount].Description) : "";
             var description = Settings.EmbedToggles.RaidEmbedDescription.Length > 0 ? string.Join("\n", Settings.EmbedToggles.RaidEmbedDescription) : "";
             if (description.Length > 4096) description = description[..4096];
 
@@ -2709,7 +2722,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                         Settings.EmbedToggles.IncludeCountdown
                             ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
                             : $"**Waiting in lobby!**",
-                        $"Click the 🎮 reaction below to receive the raid code via DM",
+                        "\u200B",
                         true);
                 }
             }
@@ -2736,17 +2749,21 @@ namespace SysBot.Pokemon.SV.BotRaid
                 embed.WithImageUrl($"attachment://{fileName}");
             }
 
-            var raidMessage = await EchoUtil.RaidEmbed(imageBytes, fileName, embed);
+            // Add raid code information to the embed for new raids that aren't starting yet
+            if (!disband && names is null && !upnext && !raidstart && code != "Free For All")
+            {
+                // Add a field with code information
+                embed.AddField("**__Raid Code__**",
+                    "React with ✅ to receive the raid code via DM.\n" +
+                    "The code will be sent to you privately.", false);
+            }
 
-            // Only add reaction to the initial raid announcement that has a code
-            // Check that:
-            // 1. It's not a "Free For All" raid
-            // 2. It's not a raid that's starting (names is null)
-            // 3. It's not an upcoming raid announcement
-            // 4. It's not a raid that has started (players list)
-            // 5. It's not a disbanded raid
+            // Send the embed to all channels and get list of sent messages
+            var sentMessages = await EchoUtil.RaidEmbed(imageBytes, fileName, embed);
+
+            // Determine if this is an initial raid announcement with a code
             bool isInitialCodedRaidAnnouncement =
-                raidMessage != null &&
+                sentMessages.Count > 0 &&
                 code != "Free For All" &&
                 names is null &&
                 !upnext &&
@@ -2755,11 +2772,48 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             if (isInitialCodedRaidAnnouncement)
             {
-                // Store message info for reaction handling
-                SharedRaidCodeHandler.UpdateActiveRaid(raidMessage.Id, raidMessage.Channel.Id, code);
+                var raidInfoDict = new Dictionary<string, string>
+                {
+                    ["RaidTitle"] = RaidEmbedInfoHelpers.RaidEmbedTitle,
+                    ["TeraType"] = RaidEmbedInfoHelpers.RaidSpeciesTeraType,
+                    ["TeraIconUrl"] = teraIconUrl,
+                    ["ThumbnailUrl"] = turl,
+                    ["IsShiny"] = Settings.ActiveRaids[RotationCount].IsShiny.ToString(),
+                    ["DifficultyLevel"] = Settings.ActiveRaids[RotationCount].DifficultyLevel.ToString(),
+                    ["Level"] = RaidEmbedInfoHelpers.RaidLevel.ToString(),
+                    ["Gender"] = RaidEmbedInfoHelpers.RaidSpeciesGender,
+                    ["Nature"] = RaidEmbedInfoHelpers.RaidSpeciesNature,
+                    ["Ability"] = RaidEmbedInfoHelpers.RaidSpeciesAbility,
+                    ["IVs"] = RaidEmbedInfoHelpers.RaidSpeciesIVs,
+                    ["Scale"] = $"{RaidEmbedInfoHelpers.ScaleText}({RaidEmbedInfoHelpers.ScaleNumber})",
+                    ["Moves"] = RaidEmbedInfoHelpers.Moves,
+                    ["ExtraMoves"] = RaidEmbedInfoHelpers.ExtraMoves,
+                    ["SpecialRewards"] = RaidEmbedInfoHelpers.SpecialRewards,
+                    ["TypeAdvantage"] = typeAdvantage
+                };
+                if (Settings.ActiveRaids[RotationCount].DifficultyLevel == 7)
+                {
+                    raidInfoDict["RaidMechanics"] = GetRaidBossMechanics();
+                }
 
-                // Add the controller reaction
-                await raidMessage.AddReactionAsync(new Emoji("🎮"));
+                foreach (var sentMessage in sentMessages)
+                {
+                    try
+                    {
+                        SharedRaidCodeHandler.AddActiveRaidMessageWithInfoDict(
+                            sentMessage.Id,
+                            sentMessage.Channel.Id,
+                            code,
+                            raidInfoDict);
+
+                        Log($"Added raid message tracking for message {sentMessage.Id} in channel {sentMessage.Channel.Id}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Error tracking raid message: {ex.Message}");
+                    }
+                }
+                await SharedRaidCodeHandler.UpdateReactionsOnAllMessages(true, token);
             }
         }
 

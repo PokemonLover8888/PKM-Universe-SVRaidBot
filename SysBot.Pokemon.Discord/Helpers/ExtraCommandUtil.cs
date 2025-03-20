@@ -181,7 +181,7 @@ namespace SysBot.Pokemon.Discord
                     return false;
                 }
             }
-            await msg.AddReactionAsync(new Emoji("❌")).ConfigureAwait(false);
+            await msg.AddReactionAsync(new Emoji("🚫")).ConfigureAwait(false);
             return true;
         }
 

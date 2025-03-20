@@ -1,65 +1,113 @@
-﻿namespace SysBot.Base
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace SysBot.Base
 {
     /// <summary>
     /// Handles tracking and distribution of raid codes across projects
     /// </summary>
     public static class SharedRaidCodeHandler
     {
-        // Track the active raid message with a code button
-        private static ulong _currentRaidMessageId = 0;
-        // Store the current raid code
-        private static string _currentRaidCode = string.Empty;
-        // Track the channel where the message is posted
-        private static ulong _currentChannelId = 0;
-
+        // Track all active raid messages with a code button
+        private static readonly Dictionary<ulong, RaidMessageInfo> _activeRaidMessages = new();
         private static readonly object _lock = new object();
 
-        // Update the current raid tracking information
-        public static void UpdateActiveRaid(ulong messageId, ulong channelId, string raidCode)
+        // Delegate for reaction updates - will be set by the Discord project
+        public static Func<ulong, ulong, bool, Task>? UpdateMessageReactionCallback { get; set; }
+
+        public class RaidMessageInfo
+        {
+            public ulong MessageId { get; set; }
+            public ulong ChannelId { get; set; }
+            public string RaidCode { get; set; } = string.Empty;
+
+            // Dictionary to store all raid information
+            public Dictionary<string, string> RaidInfoDict { get; set; } = new Dictionary<string, string>();
+        }
+
+        // Add a new active raid message with raid info dictionary
+        public static void AddActiveRaidMessageWithInfoDict(ulong messageId, ulong channelId, string raidCode, Dictionary<string, string> raidInfoDict)
         {
             lock (_lock)
             {
-                _currentRaidMessageId = messageId;
-                _currentChannelId = channelId;
-                _currentRaidCode = raidCode;
+                _activeRaidMessages[messageId] = new RaidMessageInfo
+                {
+                    MessageId = messageId,
+                    ChannelId = channelId,
+                    RaidCode = raidCode,
+                    RaidInfoDict = raidInfoDict
+                };
             }
         }
 
-        // Check if a given message is the current active raid message
+        // Check if a given message is an active raid message
         public static bool IsActiveRaidMessage(ulong messageId)
         {
             lock (_lock)
             {
-                return messageId == _currentRaidMessageId;
+                return _activeRaidMessages.ContainsKey(messageId);
             }
         }
 
-        // Get the current raid code
-        public static string GetCurrentRaidCode()
+        // Get the raid code
+        public static string GetRaidCodeForMessage(ulong messageId)
         {
             lock (_lock)
             {
-                return _currentRaidCode;
+                return _activeRaidMessages.TryGetValue(messageId, out var info) ? info.RaidCode : string.Empty;
             }
         }
 
-        // Clear tracking when raid is complete
-        public static void ClearRaidTracking()
+        // Get the raid info dictionary
+        public static Dictionary<string, string>? GetRaidInfoDict(ulong messageId)
         {
             lock (_lock)
             {
-                _currentRaidMessageId = 0;
-                _currentChannelId = 0;
-                _currentRaidCode = string.Empty;
+                return _activeRaidMessages.TryGetValue(messageId, out var info) ? info.RaidInfoDict : null;
             }
         }
 
-        // Get the channel ID
-        public static ulong GetCurrentChannelId()
+        // Get all active raid messages
+        public static List<RaidMessageInfo> GetAllActiveRaidMessages()
         {
             lock (_lock)
             {
-                return _currentChannelId;
+                return _activeRaidMessages.Values.ToList();
+            }
+        }
+
+        // Clear all raid tracking
+        public static void ClearAllRaidTracking()
+        {
+            lock (_lock)
+            {
+                _activeRaidMessages.Clear();
+            }
+        }
+
+        // Method to update reactions on all active messages
+        public static async Task UpdateReactionsOnAllMessages(bool isActive, CancellationToken token = default)
+        {
+            if (UpdateMessageReactionCallback == null)
+            {
+                LogUtil.LogInfo("Reaction update callback not registered.", nameof(SharedRaidCodeHandler));
+                return;
+            }
+
+            var activeMessages = GetAllActiveRaidMessages();
+            foreach (var message in activeMessages)
+            {
+                try
+                {
+                    await UpdateMessageReactionCallback(message.MessageId, message.ChannelId, isActive);
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogError($"Error updating reaction: {ex.Message}", nameof(SharedRaidCodeHandler));
+                }
             }
         }
     }
