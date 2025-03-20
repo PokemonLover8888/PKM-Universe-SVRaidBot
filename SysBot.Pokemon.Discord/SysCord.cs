@@ -219,7 +219,7 @@ namespace SysBot.Pokemon.Discord
         }
 
         private async Task HandleReactionAddedAsync(Cacheable<IUserMessage, ulong> cachedMessage,
-            Cacheable<IMessageChannel, ulong> originChannel, SocketReaction reaction)
+     Cacheable<IMessageChannel, ulong> originChannel, SocketReaction reaction)
         {
             // Ignore reactions from bots (including our own)
             if (reaction.User.Value.IsBot)
