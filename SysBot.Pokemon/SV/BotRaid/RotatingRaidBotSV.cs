@@ -92,6 +92,7 @@ namespace SysBot.Pokemon.SV.BotRaid
         private static readonly int BlueberryDensCount = 0;
         private readonly int InvalidDeliveryGroupCount = 0;
         private bool shouldRefreshMap = false;
+        public static bool HasErrored { get; set; } = false;
 
         public override async Task MainLoop(CancellationToken token)
         {
@@ -134,7 +135,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             await HardStop().ConfigureAwait(false);
         }
 
-        public override async Task RebootReset(CancellationToken t)
+        public override async Task RebootAndStop(CancellationToken t)
         {
             await ReOpenGame(new PokeRaidHubConfig(), t).ConfigureAwait(false);
             await HardStop().ConfigureAwait(false);

@@ -164,7 +164,6 @@ namespace SysBot.Pokemon.WinForms
                 // Reset error flag if using RotatingRaidBot
                 try
                 {
-                    // Use the full namespace
                     SysBot.Pokemon.SV.BotRaid.RotatingRaidBotSV.HasErrored = false;
                     LogUtil.LogInfo("Reset HasErrored flag", "BotController");
                 }
