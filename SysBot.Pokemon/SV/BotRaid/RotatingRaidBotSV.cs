@@ -2805,8 +2805,6 @@ namespace SysBot.Pokemon.SV.BotRaid
                             sentMessage.Channel.Id,
                             code,
                             raidInfoDict);
-
-                        Log($"Added raid message tracking for message {sentMessage.Id} in channel {sentMessage.Channel.Id}");
                     }
                     catch (Exception ex)
                     {

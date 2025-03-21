@@ -25,7 +25,7 @@ namespace SysBot.Pokemon.WinForms
 
         public readonly ISwitchConnectionAsync? SwitchConnection;
         public static bool IsUpdating { get; set; } = false;
-
+        private System.Windows.Forms.Timer _autoSaveTimer;
         private TcpListener? _tcpListener;
         private CancellationTokenSource? _cts;
 
@@ -424,6 +424,12 @@ namespace SysBot.Pokemon.WinForms
         {
             MinimumSize = Size;
             PG_Hub.SelectedObject = RunningEnvironment.Config;
+            _autoSaveTimer = new System.Windows.Forms.Timer
+            {
+                Interval = 10_000,
+                Enabled = true
+            };
+            _autoSaveTimer.Tick += (s, e) => SaveCurrentConfig();
             var routines = ((PokeRoutineType[])Enum.GetValues(typeof(PokeRoutineType))).Where(z => RunningEnvironment.SupportsRoutine(z));
             var list = routines.Select(z => new ComboItem(z.ToString(), (int)z)).ToArray();
             CB_Routine.DisplayMember = nameof(ComboItem.Text);
@@ -529,6 +535,12 @@ namespace SysBot.Pokemon.WinForms
                     File.Delete(portInfoPath);
             }
             catch { /* Ignore cleanup errors */ }
+
+            if (_autoSaveTimer != null)
+            {
+                _autoSaveTimer.Stop();
+                _autoSaveTimer.Dispose();
+            }
 
             SaveCurrentConfig();
             var bots = RunningEnvironment;
