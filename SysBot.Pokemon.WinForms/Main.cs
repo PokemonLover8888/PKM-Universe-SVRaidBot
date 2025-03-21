@@ -72,16 +72,9 @@ namespace SysBot.Pokemon.WinForms
             Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "NotPaldea.net" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
             Task.Run(BotMonitor);
             InitUtil.InitializeStubs(Config.Mode);
+            StartTcpListener();
 
-            // Use dynamic port allocation based on Process ID to ensure uniqueness
-            int portToUse = 55774 + (Environment.ProcessId % 1000);
-            StartTcpListener(portToUse);
-
-            // Write the port information to a file so the supervisor can find it
-            string portInfoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), $"SVRaidBot_{Environment.ProcessId}.port");
-            File.WriteAllText(portInfoPath, portToUse.ToString());
-
-            LogUtil.LogInfo($"Bot listening on port {portToUse}", "TCP");
+            LogUtil.LogInfo($"Bot initialization complete", "System");
         }
 
         private void TC_Main_SelectedIndexChanged(object sender, EventArgs e)
@@ -123,20 +116,64 @@ namespace SysBot.Pokemon.WinForms
             }
         }
 
-        private void StartTcpListener(int port)
+        private void StartTcpListener(int preferredPort = 0)
         {
             if (_tcpListener != null) return;
-            try
+            int basePort = 55000;
+            int portRange = 5000;
+
+            int initialPort = preferredPort > 0
+                ? preferredPort
+                : basePort + (Environment.ProcessId % portRange);
+
+            const int maxAttempts = 10;
+            int currentAttempt = 0;
+            int portToUse = initialPort;
+            bool success = false;
+
+            while (!success && currentAttempt < maxAttempts)
             {
-                _cts = new CancellationTokenSource();
-                _tcpListener = new TcpListener(IPAddress.Loopback, port);
-                _tcpListener.Start();
-                LogUtil.LogInfo($"TCP Listener started on port {port}", "TCP");
-                Task.Run(() => AcceptLoop(_cts.Token));
-            }
-            catch (Exception ex)
-            {
-                LogUtil.LogError($"Failed to start TCP listener on port {port}: {ex.Message}", "TCP");
+                try
+                {
+                    currentAttempt++;
+                    if (currentAttempt > 1)
+                    {
+                        int randomOffset = (Environment.ProcessId + Environment.TickCount) % portRange;
+                        portToUse = basePort + ((initialPort + randomOffset * currentAttempt) % portRange);
+                        LogUtil.LogInfo($"TCP port conflict detected. Trying alternate port {portToUse} (attempt {currentAttempt}/{maxAttempts})", "TCP");
+                    }
+                    _cts = new CancellationTokenSource();
+                    _tcpListener = new TcpListener(IPAddress.Loopback, portToUse);
+                    _tcpListener.Start();
+                    success = true;
+                    LogUtil.LogInfo($"TCP Listener started on port {portToUse}", "TCP");
+                    string portInfoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), $"SVRaidBot_{Environment.ProcessId}.port");
+                    File.WriteAllText(portInfoPath, portToUse.ToString());
+                    Task.Run(() => AcceptLoop(_cts.Token));
+                }
+                catch (Exception ex)
+                {
+                    if (currentAttempt >= maxAttempts)
+                    {
+                        LogUtil.LogError($"All attempts to start TCP listener failed. Last attempt on port {portToUse}: {ex.Message}", "TCP");
+
+                        try
+                        {
+                            string portInfoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), $"SVRaidBot_{Environment.ProcessId}.port");
+                            File.WriteAllText(portInfoPath, "ERROR:" + ex.Message);
+                        }
+                        catch { }
+                    }
+                    else
+                    {
+                        LogUtil.LogError($"Failed to start TCP listener on port {portToUse}: {ex.Message}. Will try another port.", "TCP");
+
+                        // Clean up before retry
+                        _tcpListener = null;
+                        _cts?.Dispose();
+                        _cts = null;
+                    }
+                }
             }
         }
 
