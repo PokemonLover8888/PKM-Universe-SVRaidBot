@@ -1850,8 +1850,25 @@ namespace SysBot.Pokemon.SV.BotRaid
         {
             if (_shouldRefreshMap)
             {
-                await RefreshMap(token).ConfigureAwait(false);
-                return 2; // Signal that we've refreshed the map
+                _shouldRefreshMap = false;
+                Log("Seeds have mismatched multiple times. Executing map refresh.");
+
+                Log("Starting Refresh map process...");
+                await HardStop().ConfigureAwait(false);
+                await Task.Delay(2_000, token).ConfigureAwait(false);
+                await Click(B, 3_000, token).ConfigureAwait(false);
+                await Click(B, 3_000, token).ConfigureAwait(false);
+                await GoHome(_hub.Config, token).ConfigureAwait(false);
+                await AdvanceDaySV(token).ConfigureAwait(false);
+                await SaveGame(_hub.Config, token).ConfigureAwait(false);
+                await RecoverToOverworld(token).ConfigureAwait(false);
+
+                // Reset seed mismatch counter
+                _seedMismatchCount = 0;
+
+                // Return code 2 to signal the calling method that we've refreshed the map
+                Log("Map Refresh Completed. Continuing...");
+                return 2;
             }
 
             _ = _settings.ActiveRaids[RotationCount];
@@ -4660,6 +4677,16 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             }
 
             return res;
+        }
+
+        private async Task<bool> SaveGame(PokeRaidHubConfig config, CancellationToken token)
+        {
+            Log("Saving the Game.");
+            await Click(B, 3_000, token).ConfigureAwait(false);
+            await Click(B, 3_000, token).ConfigureAwait(false);
+            await Click(X, 3_000, token).ConfigureAwait(false);
+            await Click(L, 5_000 + hub.Config.Timings.ExtraTimeConnectOnline, token).ConfigureAwait(false);
+            return true;
         }
     }
 }
