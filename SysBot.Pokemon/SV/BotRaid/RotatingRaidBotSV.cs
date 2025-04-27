@@ -1454,22 +1454,20 @@ namespace SysBot.Pokemon.SV.BotRaid
                 byte[] buffer = new byte[4];
                 random.NextBytes(buffer);
                 seed = BitConverter.ToUInt32(buffer, 0);
+
+                // Use Xoroshiro128Plus directly with the seed
+                var xoro = new Xoroshiro128Plus(seed);
+                _ = xoro.NextInt(uint.MaxValue); // Skip first value
+                uint fakeTID = (uint)xoro.NextInt(uint.MaxValue);
+                uint pid = (uint)xoro.NextInt(uint.MaxValue);
+
+                // Use ShinyUtil directly to check
+                if (ShinyUtil.GetShinyXor(pid, fakeTID) < 16)
+                    break;
             }
-            while (IsRaidShiny(seed) == 0);
+            while (true);
 
             return seed;
-        }
-
-        /// <summary>
-        /// Checks if a seed will produce a shiny Pokemon
-        /// </summary>
-        private static int IsRaidShiny(uint seed)
-        {
-            Xoroshiro128Plus rng = new(seed);
-            _ = (uint)rng.NextInt(4294967295uL);
-            uint num2 = (uint)rng.NextInt(4294967295uL);
-            uint num3 = (uint)rng.NextInt(4294967295uL);
-            return (((num3 >> 16) ^ (num3 & 0xFFFF)) >> 4 == ((num2 >> 16) ^ (num2 & 0xFFFF)) >> 4) ? 1 : 0;
         }
 
         /// <summary>
@@ -4242,7 +4240,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                     }
                 }
 
-                var (pk, seed) = IsSeedReturned(allEncounters[i], allRaids[i]);
+                uint raidSeed = allRaids[i].Seed;
 
                 for (int a = 0; a < _settings.ActiveRaids.Count; a++)
                 {
@@ -4259,11 +4257,35 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                         continue;
                     }
 
-                    if (seed == set)
+                    if (raidSeed == set)
                     {
-                        // Species and Form
-                        RaidEmbedInfoHelpers.RaidSpecies = (Species)allEncounters[i].Species;
-                        RaidEmbedInfoHelpers.RaidSpeciesForm = allEncounters[i].Form;
+                        // Call RaidInfoCommand with all necessary parameters
+                        var map = allRaids[i].MapParent;
+                        int contentType = allRaids[i].Flags switch
+                        {
+                            2 => 2, // Distribution
+                            3 => 3, // Might
+                            _ => 0, // Regular
+                        };
+
+                        int storyProgress = (int)_settings.ActiveRaids[a].StoryProgress;
+                        int groupID = (int)_settings.ActiveRaids[a].GroupID;
+
+                        // Convert seed to string in the expected format
+                        string seedString = raidSeed.ToString("X8");
+
+                        // Call RaidInfoCommand to generate all the data
+                        var (generatedPk, embed) = RaidInfoCommand(
+                            seedValue: seedString,
+                            contentType: contentType,
+                            map: map,
+                            storyProgressLevel: storyProgress,
+                            raidDeliveryGroupID: groupID,
+                            rewardsToShow: _settings.EmbedToggles.RewardsToShow,
+                            moveTypeEmojis: _settings.EmbedToggles.MoveTypeEmojis,
+                            customTypeEmojis: _settings.EmbedToggles.CustomTypeEmojis,
+                            isEvent: allRaids[i].IsEvent
+                        );
 
                         // Update Species and SpeciesForm in ActiveRaids
                         if (!_settings.ActiveRaids[a].ForceSpecificSpecies)
@@ -4272,9 +4294,32 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             _settings.ActiveRaids[a].SpeciesForm = allEncounters[i].Form;
                         }
 
+                        // Update RaidEmbedInfoHelpers with the generated data
+                        RaidEmbedInfoHelpers.RaidSpecies = (Species)allEncounters[i].Species;
+                        RaidEmbedInfoHelpers.RaidSpeciesForm = allEncounters[i].Form;
+
+                        // Star Rating
+                        var stars = allRaids[i].IsEvent
+                            ? allEncounters[i].Stars
+                            : allRaids[i].GetStarCount(allRaids[i].Difficulty, _storyProgress, allRaids[i].IsBlack);
+
+                        // Raid Title
+                        var titlePrefix = allRaids[i].IsShiny ? "Shiny" : "";
+                        var pkinfo = RaidExtensions<PK9>.GetRaidPrintName(generatedPk);
+                        RaidEmbedInfoHelpers.RaidEmbedTitle = $"{stars} ★ {titlePrefix} {(Species)allEncounters[i].Species}{pkinfo}";
+
+                        // Gender
+                        var maleEmoji = _settings.EmbedToggles.MaleEmoji.EmojiString;
+                        var femaleEmoji = _settings.EmbedToggles.FemaleEmoji.EmojiString;
+                        RaidEmbedInfoHelpers.RaidSpeciesGender = generatedPk.Gender switch
+                        {
+                            0 when !string.IsNullOrEmpty(maleEmoji) => $"{maleEmoji} Male",
+                            1 when !string.IsNullOrEmpty(femaleEmoji) => $"{femaleEmoji} Female",
+                            _ => generatedPk.Gender == 0 ? "Male" : generatedPk.Gender == 1 ? "Female" : "Genderless"
+                        };
+
                         // Encounter Info
-                        int raid_delivery_group_id = (int)_settings.ActiveRaids[a].GroupID;
-                        var encounter = allRaids[i].GetTeraEncounter(Container, allRaids[i].IsEvent ? 3 : _storyProgress, raid_delivery_group_id);
+                        var encounter = allRaids[i].GetTeraEncounter(Container, allRaids[i].IsEvent ? 3 : _storyProgress, groupID);
                         if (encounter != null)
                         {
                             RaidEmbedInfoHelpers.RaidLevel = encounter.Level;
@@ -4284,106 +4329,111 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             RaidEmbedInfoHelpers.RaidLevel = 75;
                         }
 
-                        // Star Rating
-                        var stars = allRaids[i].IsEvent
-                            ? allEncounters[i].Stars
-                            : allRaids[i].GetStarCount(allRaids[i].Difficulty, _storyProgress, allRaids[i].IsBlack);
-
-                        // Raid Title
-                        var pkinfo = RaidExtensions<PK9>.GetRaidPrintName(pk);
-                        var titlePrefix = allRaids[i].IsShiny ? "Shiny" : "";
-                        RaidEmbedInfoHelpers.RaidEmbedTitle = $"{stars} ★ {titlePrefix} {(Species)allEncounters[i].Species}{pkinfo}";
-
-                        // Gender
-                        var maleEmoji = _settings.EmbedToggles.MaleEmoji.EmojiString;
-                        var femaleEmoji = _settings.EmbedToggles.FemaleEmoji.EmojiString;
-                        RaidEmbedInfoHelpers.RaidSpeciesGender = pk.Gender switch
-                        {
-                            0 when !string.IsNullOrEmpty(maleEmoji) => $"{maleEmoji} Male",
-                            1 when !string.IsNullOrEmpty(femaleEmoji) => $"{femaleEmoji} Female",
-                            _ => pk.Gender == 0 ? "Male" : pk.Gender == 1 ? "Female" : "Genderless"
-                        };
-
-                        // Nature
-                        RaidEmbedInfoHelpers.RaidSpeciesNature = GameInfo.Strings.Natures[(int)pk.Nature];
-
-                        // Ability
-                        RaidEmbedInfoHelpers.RaidSpeciesAbility = $"{(Ability)pk.Ability}";
-
-                        // IVs
-                        RaidEmbedInfoHelpers.RaidSpeciesIVs = $"{pk.IV_HP}/{pk.IV_ATK}/{pk.IV_DEF}/{pk.IV_SPA}/{pk.IV_SPD}/{pk.IV_SPE}";
-
-                        // Tera Type
+                        // Get stats directly from the generatedPk
+                        RaidEmbedInfoHelpers.RaidSpeciesNature = GameInfo.Strings.Natures[(int)generatedPk.Nature];
+                        RaidEmbedInfoHelpers.RaidSpeciesAbility = $"{(Ability)generatedPk.Ability}";
+                        RaidEmbedInfoHelpers.RaidSpeciesIVs = $"{generatedPk.IV_HP}/{generatedPk.IV_ATK}/{generatedPk.IV_DEF}/{generatedPk.IV_SPA}/{generatedPk.IV_SPD}/{generatedPk.IV_SPE}";
                         RaidEmbedInfoHelpers.RaidSpeciesTeraType = $"{(MoveType)allRaids[i].GetTeraType(encounter)}";
 
+                        // Scale Text and Number
+                        RaidEmbedInfoHelpers.ScaleText = $"{PokeSizeDetailedUtil.GetSizeRating(generatedPk.Scale)}";
+                        RaidEmbedInfoHelpers.ScaleNumber = generatedPk.Scale;
+
                         // Moves
-                        var strings = GameInfo.GetStrings(1);
-                        var moves = new ushort[4] { allEncounters[i].Move1, allEncounters[i].Move2, allEncounters[i].Move3, allEncounters[i].Move4 };
-                        var moveNames = new List<string>();
-                        var useTypeEmojis = _settings.EmbedToggles.MoveTypeEmojis;
-                        var typeEmojis = _settings.EmbedToggles.CustomTypeEmojis
-                           .Where(e => !string.IsNullOrEmpty(e.EmojiCode))
-                           .ToDictionary(
-                               e => e.MoveType,
-                               e => $"{e.EmojiCode}"
-                           );
+                        var statsField = embed.Fields.FirstOrDefault(f => f.Name == "**__Stats__**");
+                        var moveField = embed.Fields.FirstOrDefault(f => f.Name == "**__Moves__**");
 
-                        for (int j = 0; j < moves.Length; j++)
+                        if (moveField != null && moveField.Value != "No moves available")
                         {
-                            if (moves[j] != 0)
-                            {
-                                string moveName = strings.Move[moves[j]];
-                                byte moveTypeId = MoveInfo.GetType(moves[j], pk.Context);
-                                MoveType moveType = (MoveType)moveTypeId;
+                            string movesValue = moveField.Value.ToString();
+                            int extraMovesIndex = movesValue.IndexOf("**Extra Moves:**");
 
-                                if (useTypeEmojis && typeEmojis.TryGetValue(moveType, out var moveEmoji))
-                                {
-                                    moveNames.Add($"{moveEmoji} {moveName}");
-                                }
-                                else
-                                {
-                                    moveNames.Add($"\\- {moveName}");
-                                }
+                            if (extraMovesIndex != -1)
+                            {
+                                RaidEmbedInfoHelpers.Moves = movesValue.Substring(0, extraMovesIndex).Trim();
+                                RaidEmbedInfoHelpers.ExtraMoves = movesValue.Substring(extraMovesIndex).Trim();
+                            }
+                            else
+                            {
+                                RaidEmbedInfoHelpers.Moves = movesValue;
+                                RaidEmbedInfoHelpers.ExtraMoves = string.Empty;
                             }
                         }
-                        RaidEmbedInfoHelpers.Moves = string.Join("\n", moveNames);
-
-                        // Extra Moves
-                        var extraMoveNames = new List<string>();
-                        if (allEncounters[i].ExtraMoves.Length != 0)
+                        else
                         {
-                            for (int j = 0; j < allEncounters[i].ExtraMoves.Length; j++)
+                            // Generate moves list from strings
+                            var strings = GameInfo.GetStrings(1);
+                            var moves = new ushort[4] { allEncounters[i].Move1, allEncounters[i].Move2, allEncounters[i].Move3, allEncounters[i].Move4 };
+                            var moveNames = new List<string>();
+                            var useTypeEmojis = _settings.EmbedToggles.MoveTypeEmojis;
+                            var typeEmojis = _settings.EmbedToggles.CustomTypeEmojis
+                                .Where(e => !string.IsNullOrEmpty(e.EmojiCode))
+                                .ToDictionary(
+                                    e => e.MoveType,
+                                    e => $"{e.EmojiCode}"
+                                );
+
+                            for (int j = 0; j < moves.Length; j++)
                             {
-                                if (allEncounters[i].ExtraMoves[j] != 0)
+                                if (moves[j] != 0)
                                 {
-                                    string moveName = strings.Move[allEncounters[i].ExtraMoves[j]];
-                                    byte moveTypeId = MoveInfo.GetType(allEncounters[i].ExtraMoves[j], pk.Context);
+                                    string moveName = strings.Move[moves[j]];
+                                    byte moveTypeId = MoveInfo.GetType(moves[j], generatedPk.Context);
                                     MoveType moveType = (MoveType)moveTypeId;
 
                                     if (useTypeEmojis && typeEmojis.TryGetValue(moveType, out var moveEmoji))
                                     {
-                                        extraMoveNames.Add($"{moveEmoji} {moveName}");
+                                        moveNames.Add($"{moveEmoji} {moveName}");
                                     }
                                     else
                                     {
-                                        extraMoveNames.Add($"\\- {moveName}");
+                                        moveNames.Add($"\\- {moveName}");
                                     }
                                 }
                             }
-                            RaidEmbedInfoHelpers.ExtraMoves = string.Join("\n", extraMoveNames);
+                            RaidEmbedInfoHelpers.Moves = string.Join("\n", moveNames);
+
+                            // Extra Moves
+                            var extraMoveNames = new List<string>();
+                            if (allEncounters[i].ExtraMoves.Length != 0)
+                            {
+                                for (int j = 0; j < allEncounters[i].ExtraMoves.Length; j++)
+                                {
+                                    if (allEncounters[i].ExtraMoves[j] != 0)
+                                    {
+                                        string moveName = strings.Move[allEncounters[i].ExtraMoves[j]];
+                                        byte moveTypeId = MoveInfo.GetType(allEncounters[i].ExtraMoves[j], generatedPk.Context);
+                                        MoveType moveType = (MoveType)moveTypeId;
+
+                                        if (useTypeEmojis && typeEmojis.TryGetValue(moveType, out var moveEmoji))
+                                        {
+                                            extraMoveNames.Add($"{moveEmoji} {moveName}");
+                                        }
+                                        else
+                                        {
+                                            extraMoveNames.Add($"\\- {moveName}");
+                                        }
+                                    }
+                                }
+                                RaidEmbedInfoHelpers.ExtraMoves = string.Join("\n", extraMoveNames);
+                            }
                         }
 
-                        // Scale Text and Number
-                        RaidEmbedInfoHelpers.ScaleText = $"{PokeSizeDetailedUtil.GetSizeRating(pk.Scale)}";
-                        RaidEmbedInfoHelpers.ScaleNumber = pk.Scale;
-
                         // Special Rewards
-                        var res = GetSpecialRewards(allRewards[i], _settings.EmbedToggles.RewardsToShow);
-                        RaidEmbedInfoHelpers.SpecialRewards = res;
+                        var rewardsField = embed.Fields.FirstOrDefault(f => f.Name == "**__Special Rewards__**");
+                        if (rewardsField != null && rewardsField.Value != "No special rewards available")
+                        {
+                            RaidEmbedInfoHelpers.SpecialRewards = rewardsField.Value.ToString();
+                        }
+                        else
+                        {
+                            var res = GetSpecialRewards(allRewards[i], _settings.EmbedToggles.RewardsToShow);
+                            RaidEmbedInfoHelpers.SpecialRewards = res;
+                        }
 
                         // Area Text
                         var areaText = $"{Areas.GetArea((int)(allRaids[i].Area - 1), allRaids[i].MapParent)} - Den {allRaids[i].Den}";
-                        Log($"Seed {seed:X8} found for {(Species)allEncounters[i].Species} in {areaText}");
+                        Log($"Seed {set:X8} found for {(Species)allEncounters[i].Species} in {areaText}");
                     }
                 }
             }
@@ -4472,7 +4522,9 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             var form = encounter.Form;
             var level = encounter.Level;
 
-            var param = encounter.GetParam();
+            // Get PersonalInfo for the gender ratio
+            var pi = PersonalTable.SV.GetFormEntry(encounter.Species, encounter.Form);
+
             var pk = new PK9
             {
                 Species = encounter.Species,
@@ -4486,7 +4538,26 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             if (raid.IsShiny)
                 pk.SetIsShiny(true);
 
-            Encounter9RNG.GenerateData(pk, param, EncounterCriteria.Unrestricted, raid.Seed);
+            // Create properly configured parameters
+            var param = new GenerateParam9(
+                Species: encounter.Species,
+                GenderRatio: pi.Gender,
+                FlawlessIVs: encounter.FlawlessIVCount,
+                RollCount: 1,
+                Height: 0,
+                Weight: 0,
+                ScaleType: SizeType9.RANDOM,
+                Scale: 0,
+                Ability: encounter.Ability,
+                Shiny: raid.IsShiny ? Shiny.Always : Shiny.Never
+            );
+
+            // Convert the uint seed to ulong explicitly
+            ulong seedUlong = raid.Seed;
+
+            // Generate the Pokémon data
+            bool generationSuccess = Encounter9RNG.GenerateData(pk, param, EncounterCriteria.Unrestricted, seedUlong);
+
             var strings = GameInfo.GetStrings(1);
             var useTypeEmojis = moveTypeEmojis;
             var typeEmojis = customTypeEmojis
