@@ -3784,13 +3784,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         /// </summary>
         private async Task<List<(uint Area, uint LotteryGroup, uint Den, uint Seed, uint Flags, bool IsEvent)>> ExtractRaidInfo(TeraRaidMapParent mapType, CancellationToken token)
         {
-            byte[] raidData = mapType switch
-            {
-                TeraRaidMapParent.Paldea => await ReadPaldeaRaids(token),
-                TeraRaidMapParent.Kitakami => await ReadKitakamiRaids(token),
-                TeraRaidMapParent.Blueberry => await ReadBlueberryRaids(token),
-                _ => throw new InvalidOperationException("Invalid region"),
-            };
+            byte[] raidData = await ReadRaidsForRegion(mapType, token);
 
             var raids = new List<(uint Area, uint LotteryGroup, uint Den, uint Seed, uint Flags, bool IsEvent)>();
             for (int i = 0; i < raidData.Length; i += Raid.SIZE)
@@ -4031,7 +4025,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             if (IsBlueberry)
             {
                 // Process only Blueberry raids
-                var dataB = await ReadBlueberryRaids(token);
+                var dataB = await ReadRaidsForRegion(TeraRaidMapParent.Blueberry, token);
                 Log("Reading Blueberry Raids...");
                 var (blueberryRaids, blueberryEncounters, blueberryRewards) = await ProcessRaids(dataB, TeraRaidMapParent.Blueberry, token);
                 allRaids.AddRange(blueberryRaids);
@@ -4041,7 +4035,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             else if (IsKitakami)
             {
                 // Process only Kitakami raids
-                var dataK = await ReadKitakamiRaids(token);
+                var dataK = await ReadRaidsForRegion(TeraRaidMapParent.Kitakami, token);
                 Log("Reading Kitakami Raids...");
                 var (kitakamiRaids, kitakamiEncounters, kitakamiRewards) = await ProcessRaids(dataK, TeraRaidMapParent.Kitakami, token);
                 allRaids.AddRange(kitakamiRaids);
@@ -4051,7 +4045,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             else
             {
                 // Default to processing Paldea raids
-                var dataP = await ReadPaldeaRaids(token);
+                var dataP = await ReadRaidsForRegion(TeraRaidMapParent.Paldea, token);
                 Log("Reading Paldea Raids...");
                 var (paldeaRaids, paldeaEncounters, paldeaRewards) = await ProcessRaids(dataP, TeraRaidMapParent.Paldea, token);
                 allRaids.AddRange(paldeaRaids);
@@ -4125,30 +4119,17 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         }
 
         /// <summary>
-        /// Reads Paldea raid data
+        /// Reads raid data for a specific region
         /// </summary>
-        private async Task<byte[]> ReadPaldeaRaids(CancellationToken token)
+        private async Task<byte[]> ReadRaidsForRegion(TeraRaidMapParent region, CancellationToken token)
         {
-            var dataP = await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP + RaidBlock.HEADER_SIZE, (int)RaidBlock.SIZE_BASE, token).ConfigureAwait(false);
-            return dataP;
-        }
-
-        /// <summary>
-        /// Reads Kitakami raid data
-        /// </summary>
-        private async Task<byte[]> ReadKitakamiRaids(CancellationToken token)
-        {
-            var dataK = await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerK, (int)RaidBlock.SIZE_KITAKAMI, token).ConfigureAwait(false);
-            return dataK;
-        }
-
-        /// <summary>
-        /// Reads Blueberry raid data
-        /// </summary>
-        private async Task<byte[]> ReadBlueberryRaids(CancellationToken token)
-        {
-            var dataB = await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerB, (int)RaidBlock.SIZE_BLUEBERRY, token).ConfigureAwait(false);
-            return dataB;
+            return region switch
+            {
+                TeraRaidMapParent.Paldea => await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP + RaidBlock.HEADER_SIZE, (int)RaidBlock.SIZE_BASE, token).ConfigureAwait(false),
+                TeraRaidMapParent.Kitakami => await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerK, (int)RaidBlock.SIZE_KITAKAMI, token).ConfigureAwait(false),
+                TeraRaidMapParent.Blueberry => await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerB, (int)RaidBlock.SIZE_BLUEBERRY, token).ConfigureAwait(false),
+                _ => throw new ArgumentException("Invalid region", nameof(region))
+            };
         }
 
         /// <summary>
@@ -4185,7 +4166,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         /// </summary>
         private async Task<List<(uint Area, uint LotteryGroup, uint Den, uint Seed, uint Flags, bool IsEvent)>> ExtractPaldeaRaidInfo(CancellationToken token)
         {
-            byte[] raidData = await ReadPaldeaRaids(token);
+            byte[] raidData = await ReadRaidsForRegion(TeraRaidMapParent.Paldea, token);
             var activeRaids = new List<(uint Area, uint LotteryGroup, uint Den, uint Seed, uint Flags, bool IsEvent)>();
 
             for (int i = 0; i < raidData.Length; i += Raid.SIZE)
