@@ -119,8 +119,8 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             if (_settings.ActiveRaids.Count < 1)
             {
-                Log("ActiveRaids cannot be 0. Please setup your parameters for the raid(s) you are hosting.");
-                return;
+                Log("No active raids configured. Default shiny raids will be added once game data is initialized.");
+                // Continue execution instead of returning
             }
 
             try
@@ -195,6 +195,66 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             public void SavePlayerData(Dictionary<ulong, PlayerInfo> data) =>
                 File.WriteAllText(_filePath, JsonConvert.SerializeObject(data, Formatting.Indented));
+        }
+
+        /// <summary>
+        /// Inserts default shiny raids when no active raids are configured
+        /// </summary>
+        private async Task InsertDefaultShinyRaids(CancellationToken token)
+        {
+            // Generate two random shiny raids
+            for (int i = 0; i < 2; i++)
+            {
+                uint randomSeed = GenerateRandomShinySeed();
+                string seedValue = randomSeed.ToString("X8");
+
+                // Default to 5-star raids with unlocked 5-stars progress
+                GameProgress gameProgress = GameProgress.Unlocked5Stars;
+                int difficultyLevel = 5;
+                var crystalType = TeraCrystalType.Base;
+                TeraRaidMapParent map = TeraRaidMapParent.Paldea;
+                int contentType = 0; // Regular raid
+                int raidDeliveryGroupID = 0;
+
+                // Use RaidInfoCommand to get the PK9 details
+                (PK9 pk, Embed embed) = RaidInfoCommand(
+                    seedValue, contentType, map, (int)gameProgress, raidDeliveryGroupID,
+                    _settings.EmbedToggles.RewardsToShow, _settings.EmbedToggles.MoveTypeEmojis,
+                    _settings.EmbedToggles.CustomTypeEmojis, 0, false
+                );
+
+                // Get the Tera type from the embed
+                string teraType = ExtractTeraTypeFromEmbed(embed);
+                string[] battlers = GetBattlerForTeraType(teraType);
+
+                // If no specific battler is configured for this Tera type, use a default one
+                if (battlers.Length == 0 || string.IsNullOrEmpty(battlers[0]))
+                {
+                    // Default to a general strong Pokemon
+                    battlers = new[] { "Koraidon @ Booster Energy\nAbility: Orichalcum Pulse\nLevel: 100\nShiny: Yes\nEVs: 252 Atk / 4 SpD / 252 Spe\nJolly Nature\n- Collision Course\n- Flare Blitz\n- Earthquake\n- Dragon Claw" };
+                }
+
+                RotatingRaidParameters newShinyRaid = new()
+                {
+                    Seed = seedValue,
+                    Species = (Species)pk.Species,
+                    SpeciesForm = pk.Form,
+                    Title = $"Default Shiny {(Species)pk.Species}",
+                    DifficultyLevel = difficultyLevel,
+                    StoryProgress = (GameProgressEnum)gameProgress,
+                    CrystalType = crystalType,
+                    IsShiny = true,
+                    PartyPK = battlers,
+                    ActiveInRotation = true,
+                    Action1 = Action1Type.GoAllOut,
+                    Action1Delay = 15 // 15-second delay before action
+                };
+
+                _settings.ActiveRaids.Add(newShinyRaid);
+                Log($"Added Default Shiny Raid - Species: {(Species)pk.Species}, Seed: {seedValue}");
+            }
+
+            Log("Two default shiny raids have been added. Bot will continue operating normally.");
         }
 
         /// <summary>
@@ -382,9 +442,15 @@ namespace SysBot.Pokemon.SV.BotRaid
                             _todaySeed = BitConverter.ToUInt64(await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP, 8, token).ConfigureAwait(false), 0);
                             Log($"Today Seed: {_todaySeed:X8}");
                         }
+                        await ReadRaids(token).ConfigureAwait(false);
+
+                        // Now Container is fully populated - check if we need to add default raids
+                        if (_settings.ActiveRaids.Count < 1)
+                        {
+                            await InsertDefaultShinyRaids(token).ConfigureAwait(false);
+                        }
 
                         Log($"Preparing parameter for {_settings.ActiveRaids[RotationCount].Species}");
-                        await ReadRaids(token).ConfigureAwait(false);
 
                         var currentSeed = BitConverter.ToUInt64(await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP, 8, token).ConfigureAwait(false), 0);
                         if (_todaySeed != currentSeed || _lobbyError >= 2)
@@ -4294,6 +4360,17 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             _settings.ActiveRaids[a].SpeciesForm = allEncounters[i].Form;
                         }
 
+                        // Encounter Info
+                        var encounter = allRaids[i].GetTeraEncounter(Container, allRaids[i].IsEvent ? 3 : _storyProgress, groupID);
+                        if (encounter != null)
+                        {
+                            RaidEmbedInfoHelpers.RaidLevel = encounter.Level;
+                        }
+                        else
+                        {
+                            RaidEmbedInfoHelpers.RaidLevel = 75;
+                        }
+
                         // Update RaidEmbedInfoHelpers with the generated data
                         RaidEmbedInfoHelpers.RaidSpecies = (Species)allEncounters[i].Species;
                         RaidEmbedInfoHelpers.RaidSpeciesForm = allEncounters[i].Form;
@@ -4317,17 +4394,6 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             1 when !string.IsNullOrEmpty(femaleEmoji) => $"{femaleEmoji} Female",
                             _ => generatedPk.Gender == 0 ? "Male" : generatedPk.Gender == 1 ? "Female" : "Genderless"
                         };
-
-                        // Encounter Info
-                        var encounter = allRaids[i].GetTeraEncounter(Container, allRaids[i].IsEvent ? 3 : _storyProgress, groupID);
-                        if (encounter != null)
-                        {
-                            RaidEmbedInfoHelpers.RaidLevel = encounter.Level;
-                        }
-                        else
-                        {
-                            RaidEmbedInfoHelpers.RaidLevel = 75;
-                        }
 
                         // Get stats directly from the generatedPk
                         RaidEmbedInfoHelpers.RaidSpeciesNature = GameInfo.Strings.Natures[(int)generatedPk.Nature];
