@@ -5,7 +5,6 @@ using RaidCrawler.Core.Structures;
 using SysBot.Base;
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -35,9 +34,9 @@ namespace SysBot.Pokemon.SV.BotRaid
         private readonly RotatingRaidSettingsSV _settings = hub.Config.RotatingRaidSV;
         private RemoteControlAccessList RaiderBanList => _settings.RaiderBanList;
 
-        // Thread-safe map of species to group IDs
-        public static ImmutableDictionary<string, List<(int GroupID, int Index, string DenIdentifier)>> SpeciesToGroupIDMap { get; private set; } =
-            ImmutableDictionary.Create<string, List<(int GroupID, int Index, string DenIdentifier)>>(StringComparer.OrdinalIgnoreCase);
+        // Store Event Data - map of species to group IDs
+        public static Dictionary<string, List<(int GroupID, int Index, string DenIdentifier)>> SpeciesToGroupIDMap { get; set; } =
+            new Dictionary<string, List<(int GroupID, int Index, string DenIdentifier)>>(StringComparer.OrdinalIgnoreCase);
 
         // Shared HTTP client for network operations
         private static readonly HttpClient _httpClient = new();
@@ -200,7 +199,7 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// <summary>
         /// Inserts default shiny raids when no active raids are configured
         /// </summary>
-        private async Task InsertDefaultShinyRaids(CancellationToken token)
+        private Task InsertDefaultShinyRaids(CancellationToken token)
         {
             // Generate two random shiny raids
             for (int i = 0; i < 2; i++)
@@ -255,6 +254,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
 
             Log("Two default shiny raids have been added. Bot will continue operating normally.");
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -4208,9 +4208,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             var allRaids = Container!.Raids;
             var allEncounters = Container.Encounters;
             var allRewards = Container.Rewards;
-            uint denHexSeedUInt;
 
-            if (!uint.TryParse(_denHexSeed, NumberStyles.AllowHexSpecifier, null, out denHexSeedUInt))
+            if (!uint.TryParse(_denHexSeed, NumberStyles.AllowHexSpecifier, null, out uint denHexSeedUInt))
             {
                 Log($"Failed to parse seed {_denHexSeed} as hex value");
                 return;
@@ -4238,8 +4237,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                         if (!SpeciesToGroupIDMap.ContainsKey(speciesName))
                         {
                             newEventSpeciesFound = true;
-                            // To preserve thread-safety, we should create a new map rather than clear the existing one
-                            SpeciesToGroupIDMap = ImmutableDictionary.Create<string, List<(int GroupID, int Index, string DenIdentifier)>>(StringComparer.OrdinalIgnoreCase);
+                            SpeciesToGroupIDMap.Clear(); // Clear the existing map
                             break; // No need to check further
                         }
                     }
@@ -4294,14 +4292,14 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
 
                         if (groupID != -1)
                         {
-                            // Create a new immutable dictionary with the added or updated entry
-                            var currentMap = SpeciesToGroupIDMap;
-                            var newList = currentMap.TryGetValue(speciesKey, out var existingList)
-                                ? existingList.Concat([(groupID, i, denIdentifier)]).ToList()
-                                : [(groupID, i, denIdentifier)];
-
-                            var updatedMap = currentMap.SetItem(speciesKey, newList);
-                            SpeciesToGroupIDMap = updatedMap;
+                            if (!SpeciesToGroupIDMap.TryGetValue(speciesKey, out List<(int GroupID, int Index, string DenIdentifier)>? value))
+                            {
+                                SpeciesToGroupIDMap[speciesKey] = [(groupID, i, denIdentifier)];
+                            }
+                            else
+                            {
+                                value.Add((groupID, i, denIdentifier));
+                            }
                         }
                     }
                 }
