@@ -231,7 +231,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 if (battlers.Length == 0 || string.IsNullOrEmpty(battlers[0]))
                 {
                     // Default to a general strong Pokemon
-                    battlers = new[] { "Koraidon @ Booster Energy\nAbility: Orichalcum Pulse\nLevel: 100\nShiny: Yes\nEVs: 252 Atk / 4 SpD / 252 Spe\nJolly Nature\n- Collision Course\n- Flare Blitz\n- Earthquake\n- Dragon Claw" };
+                    battlers = ["Koraidon @ Booster Energy\r\nBall: Master Ball\r\nLevel: 100\r\nShiny: No\r\nAbility: Orichalcum Pulse\r\nEVs: 252 Atk / 4 SpA / 252 Spe\r\nAdamant Nature\r\n.MetLocation=124\r\n.MetLevel=72\r\n.Version=50\r\n- Drain Punch"];
                 }
 
                 RotatingRaidParameters newShinyRaid = new()
@@ -247,7 +247,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                     PartyPK = battlers,
                     ActiveInRotation = true,
                     Action1 = Action1Type.GoAllOut,
-                    Action1Delay = 15 // 15-second delay before action
+                    Action1Delay = 5 // 5-second delay before action
                 };
 
                 _settings.ActiveRaids.Add(newShinyRaid);
