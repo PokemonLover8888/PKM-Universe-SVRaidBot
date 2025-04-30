@@ -2854,10 +2854,20 @@ namespace SysBot.Pokemon.SV.BotRaid
             Log($"Rotation Count: {RotationCount} | Species is {_settings.ActiveRaids[RotationCount].Species}");
             if (!disband && !upnext && !raidstart)
                 Log($"Raid Code is: {code}");
-
-            if (_settings.ActiveRaids[RotationCount].SpriteAlternateArt && _currentRaidPk.IsShiny)
+            PK9 pk = new()
             {
-                var altUrl = AltPokeImg(_currentRaidPk);
+                Species = (ushort)_settings.ActiveRaids[RotationCount].Species,
+                Form = (byte)_settings.ActiveRaids[RotationCount].SpeciesForm
+            };
+            if (pk.Form != 0)
+                form = $"-{pk.Form}";
+            if (_settings.ActiveRaids[RotationCount].IsShiny == true)
+                pk.SetIsShiny(true);
+            else
+                pk.SetIsShiny(false);
+            if (_settings.ActiveRaids[RotationCount].SpriteAlternateArt && _settings.ActiveRaids[RotationCount].IsShiny)
+            {
+                var altUrl = AltPokeImg(pk);
                 try
                 {
                     // Check if AltPokeImg URL is valid
@@ -2868,7 +2878,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                     else
                     {
                         _settings.ActiveRaids[RotationCount].SpriteAlternateArt = false;
-                        turl = RaidExtensions<PK9>.PokeImg(_currentRaidPk, false, false);
+                        turl = RaidExtensions<PK9>.PokeImg(pk, false, false);
                         Log($"AltPokeImg URL was not valid. Setting SpriteAlternateArt to false.");
                     }
                 }
@@ -2876,14 +2886,13 @@ namespace SysBot.Pokemon.SV.BotRaid
                 {
                     Log($"Error while validating alternate image URL: {ex.Message}");
                     _settings.ActiveRaids[RotationCount].SpriteAlternateArt = false;
-                    turl = RaidExtensions<PK9>.PokeImg(_currentRaidPk, false, false);
+                    turl = RaidExtensions<PK9>.PokeImg(pk, false, false);
                 }
             }
             else
             {
-                turl = RaidExtensions<PK9>.PokeImg(_currentRaidPk, false, false);
+                turl = RaidExtensions<PK9>.PokeImg(pk, false, false);
             }
-
             if (_settings.ActiveRaids[RotationCount].Species is 0)
                 turl = "https://raw.githubusercontent.com/bdawg1989/sprites/main/imgs/combat.png";
 
@@ -4190,6 +4199,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
 
             if (!IsKitakami && !IsBlueberry)
             {
+                // check if new event species is found
                 for (int i = 0; i < raidsToCheck; i++)
                 {
                     var raid = allRaids[i];
@@ -4202,8 +4212,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                         if (!SpeciesToGroupIDMap.ContainsKey(speciesName))
                         {
                             newEventSpeciesFound = true;
-                            SpeciesToGroupIDMap.Clear();
-                            break;
+                            SpeciesToGroupIDMap.Clear(); // Clear the existing map
+                            break; // No need to check further
                         }
                     }
                 }
@@ -4213,6 +4223,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             {
                 if (newEventSpeciesFound)
                 {
+                    // stuff for paldea events
                     var raid = allRaids[i];
                     var encounter1 = allEncounters[i];
                     bool isDistributionRaid = raid.Flags == 2;
@@ -4287,113 +4298,89 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
 
                     if (raidSeed == set)
                     {
-                        string seedValue = raidSeed.ToString("X8");
+                        // Call RaidInfoCommand with all necessary parameters
+                        var map = allRaids[i].MapParent;
                         int contentType = allRaids[i].Flags switch
                         {
-                            2 => 2,
-                            3 => 3,
-                            _ => 0,
+                            2 => 2, // Distribution
+                            3 => 3, // Might
+                            _ => 0, // Regular
                         };
 
-                        var map = allRaids[i].MapParent;
                         int storyProgress = (int)_settings.ActiveRaids[a].StoryProgress;
                         int groupID = (int)_settings.ActiveRaids[a].GroupID;
 
-                        (PK9 generatedPk, Embed embed) = RaidInfoCommand(
-                            seedValue,
-                            contentType,
-                            map,
-                            storyProgress,
-                            groupID,
-                            _settings.EmbedToggles.RewardsToShow,
-                            _settings.EmbedToggles.MoveTypeEmojis,
-                            _settings.EmbedToggles.CustomTypeEmojis,
-                            0,
-                            allRaids[i].IsEvent
+                        // Convert seed to string in the expected format
+                        string seedString = raidSeed.ToString("X8");
+
+                        // Call RaidInfoCommand to generate all the data
+                        var (generatedPk, embed) = RaidInfoCommand(
+                            seedValue: seedString,
+                            contentType: contentType,
+                            map: map,
+                            storyProgressLevel: storyProgress,
+                            raidDeliveryGroupID: groupID,
+                            rewardsToShow: _settings.EmbedToggles.RewardsToShow,
+                            moveTypeEmojis: _settings.EmbedToggles.MoveTypeEmojis,
+                            customTypeEmojis: _settings.EmbedToggles.CustomTypeEmojis,
+                            isEvent: allRaids[i].IsEvent
                         );
 
-                        _currentRaidPk = generatedPk;
-                        _settings.ActiveRaids[a].Species = (Species)generatedPk.Species;
-                        _settings.ActiveRaids[a].SpeciesForm = generatedPk.Form;
-                        _settings.ActiveRaids[a].IsShiny = allRaids[i].IsShiny;
+                        _settings.ActiveRaids[a].Species = (Species)allEncounters[i].Species;
+                        _settings.ActiveRaids[a].SpeciesForm = allEncounters[i].Form;
 
-                        _settings.ActiveRaids[a].CrystalType = allRaids[i].Flags switch
+                        // Encounter Info
+                        var encounter = allRaids[i].GetTeraEncounter(Container, allRaids[i].IsEvent ? 3 : _storyProgress, groupID);
+                        if (encounter != null)
                         {
-                            2 => TeraCrystalType.Distribution,
-                            3 => TeraCrystalType.Might,
-                            _ => allRaids[i].IsBlack ? TeraCrystalType.Black : TeraCrystalType.Base
-                        };
-
-                        RaidEmbedInfoHelpers.RaidSpecies = (Species)generatedPk.Species;
-                        RaidEmbedInfoHelpers.RaidSpeciesForm = generatedPk.Form;
-                        RaidEmbedInfoHelpers.RaidLevel = generatedPk.CurrentLevel;
-                        RaidEmbedInfoHelpers.RaidEmbedTitle = embed.Author?.Name ?? $"{generatedPk.Species}";
-
-                        var statsField = embed.Fields.FirstOrDefault(f => f.Name == "**__Stats__**");
-                        if (statsField != null)
+                            RaidEmbedInfoHelpers.RaidLevel = encounter.Level;
+                        }
+                        else
                         {
-                            string statsValue = statsField.Value.ToString();
-                            string[] lines = statsValue.Split('\n');
-
-                            // Extract TeraType
-                            var teraTypeLine = lines.FirstOrDefault(l => l.Contains("TeraType:"));
-                            if (teraTypeLine != null)
-                            {
-                                var parts = teraTypeLine.Split(':');
-                                if (parts.Length > 1)
-                                    RaidEmbedInfoHelpers.RaidSpeciesTeraType = parts[1].Trim().Replace("*", "");
-                            }
-
-                            // Extract Level
-                            var levelLine = lines.FirstOrDefault(l => l.Contains("Level:"));
-                            if (levelLine != null)
-                            {
-                                var parts = levelLine.Split(':');
-                                if (parts.Length > 1 && int.TryParse(parts[1].Trim(), out int level))
-                                    RaidEmbedInfoHelpers.RaidLevel = level;
-                                else
-                                    RaidEmbedInfoHelpers.RaidLevel = 65; // Default if parsing fails
-                            }
-                            else
-                            {
-                                RaidEmbedInfoHelpers.RaidLevel = 65; // Default if level not found in embed
-                            }
-
-                            // Extract Gender
-                            RaidEmbedInfoHelpers.RaidSpeciesGender = generatedPk.Gender switch
-                            {
-                                0 => "Male",
-                                1 => "Female",
-                                _ => "Genderless"
-                            };
-
-                            RaidEmbedInfoHelpers.RaidSpeciesIVs = $"{generatedPk.IV_HP}/{generatedPk.IV_ATK}/{generatedPk.IV_DEF}/{generatedPk.IV_SPA}/{generatedPk.IV_SPD}/{generatedPk.IV_SPE}";
-                            RaidEmbedInfoHelpers.RaidSpeciesAbility = GameInfo.Strings.Ability[generatedPk.Ability];
-                            RaidEmbedInfoHelpers.RaidSpeciesNature = GameInfo.Strings.Natures[(int)generatedPk.Nature];
-                            // Extract Scale - just removing asterisks
-                            var scaleLine = lines.FirstOrDefault(l => l.Contains("Scale:"));
-                            if (scaleLine != null)
-                            {
-                                var parts = scaleLine.Split(':');
-                                if (parts.Length > 1)
-                                {
-                                    // Clean up asterisks but keep numbers and parentheses
-                                    string scaleInfo = parts[1].Trim().Replace("*", "");
-                                    RaidEmbedInfoHelpers.ScaleText = scaleInfo;
-                                    RaidEmbedInfoHelpers.ScaleNumber = generatedPk.Scale;
-                                }
-                            }
-                            else
-                            {
-                                RaidEmbedInfoHelpers.ScaleText = PokeSizeDetailedUtil.GetSizeRating(generatedPk.Scale).ToString();
-                                RaidEmbedInfoHelpers.ScaleNumber = generatedPk.Scale;
-                            }
+                            RaidEmbedInfoHelpers.RaidLevel = 75;
                         }
 
-                        var movesField = embed.Fields.FirstOrDefault(f => f.Name == "**__Moves__**");
-                        if (movesField != null && movesField.Value.ToString() != "No moves available")
+                        // Update RaidEmbedInfoHelpers with the generated data
+                        RaidEmbedInfoHelpers.RaidSpecies = (Species)allEncounters[i].Species;
+                        RaidEmbedInfoHelpers.RaidSpeciesForm = allEncounters[i].Form;
+
+                        // Star Rating
+                        var stars = allRaids[i].IsEvent
+                            ? allEncounters[i].Stars
+                            : allRaids[i].GetStarCount(allRaids[i].Difficulty, _storyProgress, allRaids[i].IsBlack);
+
+                        // Raid Title
+                        var titlePrefix = allRaids[i].IsShiny ? "Shiny" : "";
+                        var pkinfo = RaidExtensions<PK9>.GetRaidPrintName(generatedPk);
+                        RaidEmbedInfoHelpers.RaidEmbedTitle = $"{stars} ★ {titlePrefix} {(Species)allEncounters[i].Species}{pkinfo}";
+
+                        // Gender
+                        var maleEmoji = _settings.EmbedToggles.MaleEmoji.EmojiString;
+                        var femaleEmoji = _settings.EmbedToggles.FemaleEmoji.EmojiString;
+                        RaidEmbedInfoHelpers.RaidSpeciesGender = generatedPk.Gender switch
                         {
-                            string movesValue = movesField.Value.ToString();
+                            0 when !string.IsNullOrEmpty(maleEmoji) => $"{maleEmoji} Male",
+                            1 when !string.IsNullOrEmpty(femaleEmoji) => $"{femaleEmoji} Female",
+                            _ => generatedPk.Gender == 0 ? "Male" : generatedPk.Gender == 1 ? "Female" : "Genderless"
+                        };
+
+                        // Get stats directly from the generatedPk
+                        RaidEmbedInfoHelpers.RaidSpeciesNature = GameInfo.Strings.Natures[(int)generatedPk.Nature];
+                        RaidEmbedInfoHelpers.RaidSpeciesAbility = $"{(Ability)generatedPk.Ability}";
+                        RaidEmbedInfoHelpers.RaidSpeciesIVs = $"{generatedPk.IV_HP}/{generatedPk.IV_ATK}/{generatedPk.IV_DEF}/{generatedPk.IV_SPA}/{generatedPk.IV_SPD}/{generatedPk.IV_SPE}";
+                        RaidEmbedInfoHelpers.RaidSpeciesTeraType = $"{(MoveType)allRaids[i].GetTeraType(encounter)}";
+
+                        // Scale Text and Number
+                        RaidEmbedInfoHelpers.ScaleText = $"{PokeSizeDetailedUtil.GetSizeRating(generatedPk.Scale)}";
+                        RaidEmbedInfoHelpers.ScaleNumber = generatedPk.Scale;
+
+                        // Moves
+                        var statsField = embed.Fields.FirstOrDefault(f => f.Name == "**__Stats__**");
+                        var moveField = embed.Fields.FirstOrDefault(f => f.Name == "**__Moves__**");
+
+                        if (moveField != null && moveField.Value != "No moves available")
+                        {
+                            string movesValue = moveField.Value.ToString();
                             int extraMovesIndex = movesValue.IndexOf("**Extra Moves:**");
 
                             if (extraMovesIndex != -1)
@@ -4409,13 +4396,9 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                         }
                         else
                         {
+                            // Generate moves list from strings
                             var strings = GameInfo.GetStrings(1);
-                            var moves = new ushort[4] {
-                        allEncounters[i].Move1,
-                        allEncounters[i].Move2,
-                        allEncounters[i].Move3,
-                        allEncounters[i].Move4
-                    };
+                            var moves = new ushort[4] { allEncounters[i].Move1, allEncounters[i].Move2, allEncounters[i].Move3, allEncounters[i].Move4 };
                             var moveNames = new List<string>();
                             var useTypeEmojis = _settings.EmbedToggles.MoveTypeEmojis;
                             var typeEmojis = _settings.EmbedToggles.CustomTypeEmojis
@@ -4445,6 +4428,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             }
                             RaidEmbedInfoHelpers.Moves = string.Join("\n", moveNames);
 
+                            // Extra Moves
                             var extraMoveNames = new List<string>();
                             if (allEncounters[i].ExtraMoves.Length != 0)
                             {
@@ -4470,8 +4454,9 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             }
                         }
 
-                        var rewardsField = embed.Fields.FirstOrDefault(f => f.Name == "**__Special Rewards__**" || f.Name == " **__Special Rewards__**");
-                        if (rewardsField != null && rewardsField.Value.ToString() != "No special rewards available" && rewardsField.Value.ToString() != "No Rewards To Display")
+                        // Special Rewards
+                        var rewardsField = embed.Fields.FirstOrDefault(f => f.Name == "**__Special Rewards__**");
+                        if (rewardsField != null && rewardsField.Value != "No special rewards available")
                         {
                             RaidEmbedInfoHelpers.SpecialRewards = rewardsField.Value.ToString();
                         }
@@ -4481,6 +4466,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             RaidEmbedInfoHelpers.SpecialRewards = res;
                         }
 
+                        // Area Text
                         var areaText = $"{Areas.GetArea((int)(allRaids[i].Area - 1), allRaids[i].MapParent)} - Den {allRaids[i].Den}";
                         Log($"Seed {set:X8} found for {(Species)allEncounters[i].Species} in {areaText}");
                     }
