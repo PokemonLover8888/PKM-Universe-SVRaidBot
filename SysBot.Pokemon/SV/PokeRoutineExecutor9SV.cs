@@ -15,7 +15,7 @@ using static System.Buffers.Binary.BinaryPrimitives;
 
 namespace SysBot.Pokemon.SV
 {
-    public abstract class PokeRoutineExecutor9SV : PokeRoutineExecutor<PK9>
+    public abstract class PokeRoutineExecutor9SV(PokeBotState cfg) : PokeRoutineExecutor<PK9>(cfg)
     {
         protected PokeDataOffsetsSV Offsets { get; } = new();
         public ulong returnOfs = 0;
@@ -23,10 +23,6 @@ namespace SysBot.Pokemon.SV
         private ulong KeyBlockAddress = 0;
 
         public ulong BaseBlockKeyPointer;
-
-        protected PokeRoutineExecutor9SV(PokeBotState cfg) : base(cfg)
-        {
-        }
 
         public override async Task<PK9> ReadPokemon(ulong offset, CancellationToken token)
         {
@@ -41,7 +37,7 @@ namespace SysBot.Pokemon.SV
 
         public async Task SetCurrentBox(byte box, CancellationToken token)
         {
-            await SwitchConnection.PointerPoke(new[] { box }, Offsets.CurrentBoxPointer, token).ConfigureAwait(false);
+            await SwitchConnection.PointerPoke([box], Offsets.CurrentBoxPointer, token).ConfigureAwait(false);
         }
 
         public async Task<SAV9SV> IdentifyTrainer(CancellationToken token)
@@ -232,18 +228,7 @@ namespace SysBot.Pokemon.SV
             return (TextSpeedOption)(data[0] & 3);
         }
 
-        //Zyro additions
-        public async Task SVSaveGameOverworld(CancellationToken token)
-        {
-            Log("Saving the game...");
-            await Click(X, 2_000, token).ConfigureAwait(false);
-            await Click(R, 1_800, token).ConfigureAwait(false);
-            await Click(A, 1_000, token).ConfigureAwait(false);
-            await Task.Delay(6_000, token).ConfigureAwait(false);
-            await Click(B, 1_500, token).ConfigureAwait(false);
-        }
-
-        private readonly IReadOnlyList<uint> DifficultyFlags = new List<uint>() { 0xEC95D8EF, 0xA9428DFE, 0x9535F471, 0x6E7F8220 };
+        private readonly IReadOnlyList<uint> DifficultyFlags = [0xEC95D8EF, 0xA9428DFE, 0x9535F471, 0x6E7F8220];
 
         public async Task<int> GetStoryProgress(ulong BaseBlockKeyPointer, CancellationToken token)
         {
@@ -348,7 +333,7 @@ namespace SysBot.Pokemon.SV
             int nugget = 0, tinyMushroom = 0, bigMushroom = 0, pearl = 0, bigPearl = 0, stardust = 0, starPiece = 0, goldBottleCap = 0, ppUp = 0;
 
             // Initialize Tera Shard counters
-            Dictionary<int, int> teraShards = new();
+            Dictionary<int, int> teraShards = [];
 
             // Count rewards
             foreach ((int, int, int) reward in rewards)
@@ -536,11 +521,11 @@ namespace SysBot.Pokemon.SV
 
         public static string[] ProcessRaidPlaceholders(string[] description, PKM pk)
         {
-            string[] raidDescription = Array.Empty<string>();
+            string[] raidDescription = [];
 
             if (description.Length > 0)
             {
-                raidDescription = description.ToArray();
+                raidDescription = [.. description];
             }
 
             string markEntryText = "";
