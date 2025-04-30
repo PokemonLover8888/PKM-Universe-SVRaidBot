@@ -57,9 +57,6 @@ namespace SysBot.Pokemon
             [DisplayName("Species")]
             public Species Species { get; set; } = Species.None;
 
-            [DisplayName("Force Selected Species?")]
-            public bool ForceSpecificSpecies { get; set; } = false;
-
             [DisplayName("Pokemon Form Number")]
             public int SpeciesForm { get; set; } = 0;
 
