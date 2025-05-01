@@ -410,41 +410,85 @@ namespace SysBot.Pokemon.SV.BotRaid
                 bool partyReady;
                 RotationCount = 0;
                 var raidsHosted = 0;
+                int consecutiveErrors = 0;
+                const int maxConsecutiveErrors = 3;
 
                 while (!token.IsCancellationRequested)
                 {
                     try
                     {
-                        await InitializeSessionOffsets(token).ConfigureAwait(false);
+                        try
+                        {
+                            await InitializeSessionOffsets(token).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error initializing session offsets: {ex.Message}");
+                            await Task.Delay(2000, token).ConfigureAwait(false);
+                            continue;
+                        }
 
                         if (_isRecoveringFromReboot)
                         {
-                            Log("Recovering from reboot - ensuring online connectivity before proceeding.");
+                            Log("Recovering from reboot - ensuring online connectivity before proceeding");
                             if (!await IsOnOverworld(_overworldOffset, token).ConfigureAwait(false))
                             {
-                                Log("Not on overworld after reboot, attempting to return to overworld.");
-                                await RecoverToOverworld(token).ConfigureAwait(false);
+                                Log("Not on overworld after reboot, attempting to return to overworld");
+                                if (!await RecoverToOverworld(token).ConfigureAwait(false))
+                                {
+                                    Log("Failed to recover to overworld, retrying the reboot process");
+                                    await PerformRebootAndReset(token).ConfigureAwait(false);
+                                    continue;
+                                }
                             }
 
                             if (!await ConnectToOnline(_hub.Config, token).ConfigureAwait(false))
                             {
-                                Log("Failed to connect online after reboot, retrying the reboot process.");
+                                Log("Failed to connect online after reboot, retrying the reboot process");
                                 await PerformRebootAndReset(token).ConfigureAwait(false);
-                                return;
+                                continue;
                             }
 
                             _isRecoveringFromReboot = false;
-                            Log("Successfully recovered online connectivity after reboot.");
+                            Log("Successfully recovered online connectivity after reboot");
                         }
 
                         if (_raidCount == 0)
                         {
-                            _todaySeed = BitConverter.ToUInt64(await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP, 8, token).ConfigureAwait(false), 0);
-                            Log($"Today Seed: {_todaySeed:X8}");
+                            try
+                            {
+                                _todaySeed = BitConverter.ToUInt64(await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP, 8, token).ConfigureAwait(false), 0);
+                                Log($"Today Seed: {_todaySeed:X8}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"Error reading Today Seed: {ex.Message}");
+                                consecutiveErrors++;
+                                await Task.Delay(2000, token).ConfigureAwait(false);
+                                continue;
+                            }
                         }
-                        await ReadRaids(token).ConfigureAwait(false);
 
-                        // Now Container is fully populated - check if we need to add default raids
+                        try
+                        {
+                            await ReadRaids(token).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error reading raids: {ex.Message}");
+                            consecutiveErrors++;
+
+                            if (consecutiveErrors >= maxConsecutiveErrors)
+                            {
+                                Log("Multiple failures reading raids, rebooting game");
+                                await PerformRebootAndReset(token).ConfigureAwait(false);
+                                consecutiveErrors = 0;
+                            }
+
+                            await Task.Delay(2000, token).ConfigureAwait(false);
+                            continue;
+                        }
+
                         if (_settings.ActiveRaids.Count < 1)
                         {
                             await InsertDefaultShinyRaids(token).ConfigureAwait(false);
@@ -452,40 +496,81 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                         Log($"Preparing parameter for {_settings.ActiveRaids[RotationCount].Species}");
 
-                        var currentSeed = BitConverter.ToUInt64(await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP, 8, token).ConfigureAwait(false), 0);
-                        if (_todaySeed != currentSeed || _lobbyError >= 2)
+                        try
                         {
-                            if (_todaySeed != currentSeed)
-                            {
-                                Log($"Current Today Seed {currentSeed:X8} does not match Starting Today Seed: {_todaySeed:X8}.\nAttempting to override Today Seed...");
-                                _todaySeed = currentSeed;
-                                await OverrideTodaySeed(token).ConfigureAwait(false);
-                                Log("Today Seed has been overridden with the current seed.");
-                            }
+                            var currentSeed = BitConverter.ToUInt64(await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP, 8, token).ConfigureAwait(false), 0);
 
-                            if (_lobbyError >= 2)
+                            if (_todaySeed != currentSeed || _lobbyError >= 2)
                             {
-                                string msg = $"Failed to create a lobby {_lobbyError} times.\n";
-                                Log(msg);
-                                await CloseGame(_hub.Config, token).ConfigureAwait(false);
-                                await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
-                                _lobbyError = 0;
-                                continue;
+                                if (_todaySeed != currentSeed)
+                                {
+                                    Log($"Current Today Seed {currentSeed:X8} does not match Starting Today Seed: {_todaySeed:X8}");
+                                    _todaySeed = currentSeed;
+                                    await OverrideTodaySeed(token).ConfigureAwait(false);
+                                    Log("Today Seed has been overridden with the current seed");
+                                }
+
+                                if (_lobbyError >= 2)
+                                {
+                                    string msg = $"Failed to create a lobby {_lobbyError} times";
+                                    Log(msg);
+                                    await CloseGame(_hub.Config, token).ConfigureAwait(false);
+                                    await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
+                                    _lobbyError = 0;
+                                    continue;
+                                }
                             }
                         }
+                        catch (Exception ex)
+                        {
+                            Log($"Error checking Today Seed: {ex.Message}");
+                            consecutiveErrors++;
+                            await Task.Delay(2000, token).ConfigureAwait(false);
+                            continue;
+                        }
 
-                        // Clear NIDs.
-                        await SwitchConnection.WriteBytesAbsoluteAsync(new byte[32], _teraNIDOffsets[0], token).ConfigureAwait(false);
+                        try
+                        {
+                            await SwitchConnection.WriteBytesAbsoluteAsync(new byte[32], _teraNIDOffsets[0], token).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error clearing NIDs: {ex.Message}");
+                        }
 
-                        // Connect online and enter den.
                         int prepareResult;
+                        int prepareAttempts = 0;
                         do
                         {
-                            prepareResult = await PrepareForRaid(token).ConfigureAwait(false);
-                            if (prepareResult == 0)
+                            try
                             {
-                                Log("Failed to prepare the raid, rebooting the game.");
-                                await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+                                prepareResult = await PrepareForRaid(token).ConfigureAwait(false);
+
+                                if (prepareResult == 0)
+                                {
+                                    prepareAttempts++;
+                                    Log($"Failed to prepare raid (attempt {prepareAttempts})");
+
+                                    if (prepareAttempts >= 2)
+                                    {
+                                        Log("Failed to prepare the raid after multiple attempts, rebooting game");
+                                        await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+                                        break;
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"Error in PrepareForRaid: {ex.Message}");
+                                prepareResult = 0;
+                                prepareAttempts++;
+
+                                if (prepareAttempts >= 2)
+                                {
+                                    Log("Error preparing raid, rebooting game");
+                                    await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+                                    break;
+                                }
                             }
                         } while (prepareResult == 0 && !token.IsCancellationRequested);
 
@@ -494,39 +579,91 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                         if (prepareResult == 2)
                         {
-                            // Seed was injected, restart the loop
+                            consecutiveErrors = 0;
                             continue;
                         }
 
-                        // Wait until we're in lobby.
                         if (!await GetLobbyReady(false, token).ConfigureAwait(false))
+                        {
                             continue;
+                        }
 
-                        // Handle RA command raids
                         if (_settings.ActiveRaids[RotationCount].AddedByRACommand)
                         {
-                            await HandleRACommandRaid(token).ConfigureAwait(false);
+                            try
+                            {
+                                await HandleRACommandRaid(token).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"Error handling RA command raid: {ex.Message}");
+                            }
                         }
 
-                        // Read trainers until someone joins.
-                        (partyReady, var trainers) = await ReadTrainers(token).ConfigureAwait(false);
-                        if (!partyReady)
+                        try
                         {
-                            await HandleEmptyLobby(token).ConfigureAwait(false);
+                            (partyReady, var trainers) = await ReadTrainers(token).ConfigureAwait(false);
+                            if (!partyReady)
+                            {
+                                await HandleEmptyLobby(token).ConfigureAwait(false);
+                                continue;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error reading trainers: {ex.Message}");
+                            consecutiveErrors++;
+
+                            if (consecutiveErrors >= maxConsecutiveErrors)
+                            {
+                                await PerformRebootAndReset(token).ConfigureAwait(false);
+                                consecutiveErrors = 0;
+                            }
+
                             continue;
                         }
 
-                        await CompleteRaid(token).ConfigureAwait(false);
-                        raidsHosted++;
+                        try
+                        {
+                            await CompleteRaid(token).ConfigureAwait(false);
+                            raidsHosted++;
+                            consecutiveErrors = 0;
 
-                        if (raidsHosted == _settings.RaidSettings.TotalRaidsToHost && _settings.RaidSettings.TotalRaidsToHost > 0)
-                            break;
+                            if (raidsHosted == _settings.RaidSettings.TotalRaidsToHost && _settings.RaidSettings.TotalRaidsToHost > 0)
+                                break;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error during raid completion: {ex.Message}");
+                            consecutiveErrors++;
+
+                            if (consecutiveErrors >= maxConsecutiveErrors)
+                            {
+                                Log("Multiple raid completion failures, performing reboot");
+                                await PerformRebootAndReset(token).ConfigureAwait(false);
+                                consecutiveErrors = 0;
+                            }
+                        }
                     }
                     catch (ArgumentOutOfRangeException ex) when (ex.ParamName == "_0")
                     {
                         Log("Connection error detected. Performing reboot and reset.");
                         await PerformRebootAndReset(token).ConfigureAwait(false);
-                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Unexpected error in InnerLoop: {ex.Message}");
+                        consecutiveErrors++;
+
+                        if (consecutiveErrors >= maxConsecutiveErrors)
+                        {
+                            await PerformRebootAndReset(token).ConfigureAwait(false);
+                            consecutiveErrors = 0;
+                        }
+                        else
+                        {
+                            await Task.Delay(5000, token).ConfigureAwait(false);
+                        }
                     }
                 }
 
@@ -535,7 +672,8 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
             catch (Exception ex)
             {
-                Log($"An unexpected error occurred in InnerLoop: {ex.Message}");
+                Log($"Critical error in InnerLoop: {ex.Message}");
+                await PerformRebootAndReset(token).ConfigureAwait(false);
             }
         }
 
@@ -941,9 +1079,6 @@ namespace SysBot.Pokemon.SV.BotRaid
         }
 
         /// <summary>
-        /// Processes battle actions during the raid
-        /// </summary>
-        /// <summary>
         /// Enhanced method to detect disconnections during raid battles
         /// </summary>
         private async Task<bool> ProcessBattleActions(CancellationToken token)
@@ -951,29 +1086,33 @@ namespace SysBot.Pokemon.SV.BotRaid
             int nextUpdateMinute = 2;
             DateTime battleStartTime = DateTime.Now;
             bool hasPerformedAction1 = false;
-            bool hasPressedHome = false;
 
+            // Track last connection check time and status
             DateTime lastConnectionCheck = DateTime.Now;
             bool isConnected = true;
 
-            // loop directly on the connection check
+            // Main battle loop
             while (isConnected)
             {
-                // Only check connection every 5 seconds to reduce overhead
+                // Check connection only every 5 seconds
                 if ((DateTime.Now - lastConnectionCheck).TotalSeconds >= 5)
                 {
                     isConnected = await IsConnectedToLobby(token).ConfigureAwait(false);
                     lastConnectionCheck = DateTime.Now;
+
+                    if (!isConnected)
+                    {
+                        Log("Lost connection to lobby, stopping battle actions.");
+                        break;
+                    }
                 }
 
-                if ((DateTime.Now - lastConnectionCheck).TotalSeconds < 1) // Only if we just checked connection
+                // Always check raid status on each iteration
+                bool inRaid = await IsInRaid(token).ConfigureAwait(false);
+                if (!inRaid)
                 {
-                    bool inRaid = await IsInRaid(token).ConfigureAwait(false);
-                    if (!inRaid)
-                    {
-                        Log("Not in raid anymore, stopping battle actions.");
-                        return false;
-                    }
+                    Log("Not in raid anymore, stopping battle actions.");
+                    return false;
                 }
 
                 TimeSpan timeInBattle = DateTime.Now - battleStartTime;
@@ -1019,8 +1158,12 @@ namespace SysBot.Pokemon.SV.BotRaid
                     Log($"{nextUpdateMinute} minutes have passed. We are still in battle...");
                     nextUpdateMinute += 2;
                 }
+
+                // Small delay to prevent tight loops
+                await Task.Delay(1000, token).ConfigureAwait(false);
             }
-            // Raid Ended
+
+            // Raid ended
             return true;
         }
 
@@ -3209,75 +3352,105 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         private async Task<bool> ConnectToOnline(PokeRaidHubConfig config, CancellationToken token)
         {
             int attemptCount = 0;
-            const int maxAttempt = 5;
-            const int waitTime = 10; // time in minutes to wait after max attempts
+            const int maxAttempts = 5;
+            const int waitTimeMinutes = 10;
 
-            while (true)
+            while (attemptCount < maxAttempts && !token.IsCancellationRequested)
             {
-                if (token.IsCancellationRequested)
-                {
-                    Log("Connection attempt canceled.");
-                    break;
-                }
-
                 try
                 {
+                    // Check if already connected
                     if (await IsConnectedOnline(_connectedOffset, token).ConfigureAwait(false))
                     {
-                        Log("Connection established successfully.");
-                        break;
+                        // Verify stability
+                        bool stable = true;
+                        for (int i = 0; i < 3; i++)
+                        {
+                            await Task.Delay(1000, token).ConfigureAwait(false);
+                            if (!await IsConnectedOnline(_connectedOffset, token).ConfigureAwait(false))
+                            {
+                                stable = false;
+                                break;
+                            }
+                        }
+
+                        if (stable)
+                            break;
                     }
 
-                    if (attemptCount >= maxAttempt)
+                    if (attemptCount >= maxAttempts)
                     {
-                        Log($"Failed to connect after {maxAttempt} attempts. Assuming a softban. Initiating wait for {waitTime} minutes before retrying.");
+                        Log($"Failed to connect after {maxAttempts} attempts. Waiting {waitTimeMinutes} minutes before retrying.");
 
-                        Log("Sending an embed message to notify about technical difficulties.");
                         var embed = new EmbedBuilder
                         {
-                            Title = "Experiencing Technical Difficulties",
-                            Description = "The bot is experiencing issues connecting online. Please stand by as we try to resolve the issue.",
-                            Color = Discord.Color.Red,
+                            Title = "Experiencing Online Connection Issues",
+                            Description = "The bot is experiencing issues connecting online. Please stand by as we try to resolve this issue.",
+                            Color = Color.Red,
                             ThumbnailUrl = "https://raw.githubusercontent.com/bdawg1989/sprites/main/imgs/x.png"
                         };
                         EchoUtil.RaidEmbed(null, "", embed);
 
                         await Click(B, 0_500, token).ConfigureAwait(false);
                         await Click(B, 0_500, token).ConfigureAwait(false);
-                        Log($"Waiting for {waitTime} minutes before attempting to reconnect.");
-                        await Task.Delay(TimeSpan.FromMinutes(waitTime), token).ConfigureAwait(false);
-                        Log("Attempting to reopen the game.");
+                        await Task.Delay(TimeSpan.FromMinutes(waitTimeMinutes), token).ConfigureAwait(false);
                         await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
                         attemptCount = 0;
+                        continue;
                     }
 
                     attemptCount++;
-                    Log($"Attempt {attemptCount} of {maxAttempt}: Trying to connect online...");
+                    Log($"Connection attempt {attemptCount}/{maxAttempts}");
 
+                    // Execute connection inputs
                     await Click(X, 3_000, token).ConfigureAwait(false);
                     await Click(L, 5_000 + config.Timings.ExtraTimeConnectOnline, token).ConfigureAwait(false);
-
                     await Task.Delay(5000, token).ConfigureAwait(false);
 
-                    if (attemptCount < maxAttempt)
+                    // Check connection with stability verification
+                    bool connected = await IsConnectedOnline(_connectedOffset, token).ConfigureAwait(false);
+                    if (connected)
                     {
-                        Log("Rechecking the online connection status...");
-                        await Click(B, 0_500, token).ConfigureAwait(false);
+                        bool stable = true;
+                        for (int i = 0; i < 3; i++)
+                        {
+                            await Task.Delay(1000, token).ConfigureAwait(false);
+                            if (!await IsConnectedOnline(_connectedOffset, token).ConfigureAwait(false))
+                            {
+                                stable = false;
+                                break;
+                            }
+                        }
+
+                        if (stable)
+                            break;
                     }
+
+                    // Back out for next attempt if needed
+                    if (attemptCount < maxAttempts && !connected)
+                        await Click(B, 0_500, token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    Log($"Exception occurred during connection attempt: {ex.Message}");
+                    Log($"Connection error: {ex.Message}");
+                    attemptCount++;
 
-                    if (attemptCount >= maxAttempt)
+                    if (attemptCount >= maxAttempts)
                     {
-                        Log($"Failed to connect after {maxAttempt} attempts due to exception. Waiting for {waitTime} minutes before retrying.");
-                        await Task.Delay(TimeSpan.FromMinutes(waitTime), token).ConfigureAwait(false);
-                        Log("Attempting to reopen the game.");
+                        Log($"Connection failed after {maxAttempts} attempts due to errors.");
+                        await Task.Delay(TimeSpan.FromMinutes(waitTimeMinutes), token).ConfigureAwait(false);
                         await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
-                        attemptCount = 0;
+                        return false;
                     }
                 }
+            }
+
+            // Final verification
+            bool finalConnected = await IsConnectedOnline(_connectedOffset, token).ConfigureAwait(false);
+            if (!finalConnected)
+            {
+                Log("Failed to establish a stable connection.");
+                return false;
             }
 
             await Task.Delay(3_000 + config.Timings.ExtraTimeConnectOnline, token).ConfigureAwait(false);
