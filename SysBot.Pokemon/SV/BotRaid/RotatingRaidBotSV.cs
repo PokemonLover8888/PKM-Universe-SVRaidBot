@@ -40,27 +40,6 @@ namespace SysBot.Pokemon.SV.BotRaid
         // Shared HTTP client for network operations
         private static readonly HttpClient _httpClient = new();
 
-        private class MemoryCache
-        {
-            private readonly Dictionary<string, (DateTime Timestamp, object Value)> _cache = new();
-            private readonly TimeSpan _defaultExpiration = TimeSpan.FromSeconds(2);
-
-            public T GetOrAdd<T>(string key, Func<T> valueFactory, TimeSpan? expiration = null)
-            {
-                if (_cache.TryGetValue(key, out var cacheEntry) &&
-                    DateTime.Now - cacheEntry.Timestamp < (expiration ?? _defaultExpiration))
-                {
-                    return (T)cacheEntry.Value;
-                }
-
-                var value = valueFactory();
-                _cache[key] = (DateTime.Now, value);
-                return value;
-            }
-
-            public void Clear() => _cache.Clear();
-        }
-
         /// <summary>
         /// Data structure for raid boss mechanics (shields, special moves, etc.)
         /// </summary>
@@ -117,7 +96,6 @@ namespace SysBot.Pokemon.SV.BotRaid
         private bool _shouldRefreshMap;
         public static bool HasErrored { get; set; }
         private bool _isRecoveringFromReboot;
-        private readonly MemoryCache _memoryCache = new();
 
         /// <summary>
         /// Main execution loop for the raid bot
@@ -163,29 +141,6 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             Log($"Ending {nameof(RotatingRaidBotSV)} loop.");
             await HardStop().ConfigureAwait(false);
-        }
-
-        private async Task<Dictionary<ulong, byte[]>> BatchReadMemory(Dictionary<ulong, int> offsetsAndSizes, CancellationToken token)
-        {
-            var results = new Dictionary<ulong, byte[]>();
-            var tasks = new List<Task>();
-
-            foreach (var kvp in offsetsAndSizes)
-            {
-                var offset = kvp.Key;
-                var size = kvp.Value;
-
-                tasks.Add(Task.Run(async () => {
-                    var data = await SwitchConnection.ReadBytesAbsoluteAsync(offset, size, token);
-                    lock (results)
-                    {
-                        results[offset] = data;
-                    }
-                }, token));
-            }
-
-            await Task.WhenAll(tasks);
-            return results;
         }
 
         /// <summary>
@@ -733,14 +688,21 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 var trainers = new List<(ulong, RaidMyStatus)>();
 
-                if (!await CheckIfConnectedToLobbyAndLog(token))
+                // Direct lobby connection check
+                if (!await IsConnectedToLobby(token).ConfigureAwait(false))
                 {
-                    throw new Exception("Not connected to lobby");
+                    Log("Not connected to lobby, reopening game.");
+                    await ReOpenGame(_hub.Config, token);
+                    return; // Exit early without throwing exception
                 }
+
+                Log("Preparing for battle!");
 
                 if (!await EnsureInRaid(token))
                 {
-                    throw new Exception("Not in raid");
+                    Log("Failed to enter raid, restarting game.");
+                    await ReOpenGame(_hub.Config, token);
+                    return; // Exit early without throwing exception
                 }
 
                 var screenshotDelay = (int)_settings.EmbedToggles.ScreenshotTiming;
@@ -758,6 +720,18 @@ namespace SysBot.Pokemon.SV.BotRaid
                 }
 
                 await Task.Delay(10_000, token).ConfigureAwait(false);
+
+                // Check if the party is still present after sending embed
+                bool partyDipped = lobbyTrainersFinal.Count == 0;
+                if (partyDipped)
+                {
+                    Log("Party has left after joining. Marking raid as lost and restarting game.");
+                    _lossCount++; // Mark as a loss
+                    _raidCount++; // Count this as a completed raid
+
+                    await PerformRebootAndReset(token);
+                    return;
+                }
 
                 if (!await ProcessBattleActions(token))
                 {
@@ -806,31 +780,6 @@ namespace SysBot.Pokemon.SV.BotRaid
         }
 
         /// <summary>
-        /// Checks if connected to lobby and logs status
-        /// </summary>
-        private async Task<bool> CheckIfConnectedToLobbyAndLog(CancellationToken token)
-        {
-            try
-            {
-                if (await IsConnectedToLobby(token).ConfigureAwait(false))
-                {
-                    Log("Preparing for battle!");
-                    return true;
-                }
-
-                Log("Not connected to lobby, reopening game.");
-                await ReOpenGame(_hub.Config, token);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Log($"Error checking lobby connection: {ex.Message}, reopening game.");
-                await ReOpenGame(_hub.Config, token);
-                return false;
-            }
-        }
-
-        /// <summary>
         /// Ensures the bot is in a raid battle
         /// </summary>
         private async Task<bool> EnsureInRaid(CancellationToken token)
@@ -872,52 +821,21 @@ namespace SysBot.Pokemon.SV.BotRaid
             await SwitchConnection.WriteBytesAbsoluteAsync(new byte[32], _teraNIDOffsets[0], token).ConfigureAwait(false);
             await Task.Delay(5_000, token).ConfigureAwait(false);
 
-            try
+            // Loop through trainers again in case someone disconnected.
+            for (int i = 0; i < 3; i++)
             {
-                // Prepare batch read for NID values
-                var nidReads = new Dictionary<ulong, int>();
-                for (int i = 0; i < 3; i++)
+                try
                 {
-                    nidReads[_teraNIDOffsets[i]] = 8; // Read 8 bytes for each NID
-                }
+                    var nidOfs = _teraNIDOffsets[i];
+                    var data = await SwitchConnection.ReadBytesAbsoluteAsync(nidOfs, 8, token).ConfigureAwait(false);
+                    var nid = BitConverter.ToUInt64(data, 0);
 
-                // Batch read all NIDs
-                var nidData = await BatchReadMemory(nidReads, token);
+                    if (nid == 0)
+                        continue;
 
-                // Prepare batch read for trainer data
-                var trainerPtrs = new List<List<long>>();
-                var validIndices = new List<int>();
-
-                for (int i = 0; i < 3; i++)
-                {
-                    var nid = BitConverter.ToUInt64(nidData[_teraNIDOffsets[i]], 0);
-                    if (nid != 0)
-                    {
-                        List<long> ptr = new List<long>(Offsets.Trader2MyStatusPointer);
-                        ptr[2] += i * 0x30;
-                        trainerPtrs.Add(ptr);
-                        validIndices.Add(i);
-                    }
-                }
-
-                // Batch process trainers with valid NIDs
-                var trainerTasks = new List<Task<(int Index, RaidMyStatus Trainer)>>();
-                foreach (var (ptr, index) in trainerPtrs.Zip(validIndices, (p, i) => (p, i)))
-                {
-                    trainerTasks.Add(Task.Run(async () => {
-                        var trainer = await GetTradePartnerMyStatus(ptr, token).ConfigureAwait(false);
-                        return (index, trainer);
-                    }));
-                }
-
-                // Wait for all trainer data
-                await Task.WhenAll(trainerTasks);
-
-                // Process results
-                foreach (var task in trainerTasks)
-                {
-                    var (index, trainer) = task.Result;
-                    var nid = BitConverter.ToUInt64(nidData[_teraNIDOffsets[index]], 0);
+                    List<long> ptr = new(Offsets.Trader2MyStatusPointer);
+                    ptr[2] += i * 0x30;
+                    var trainer = await GetTradePartnerMyStatus(ptr, token).ConfigureAwait(false);
 
                     if (string.IsNullOrWhiteSpace(trainer.OT) || _hostSAV.OT == trainer.OT)
                         continue;
@@ -934,25 +852,25 @@ namespace SysBot.Pokemon.SV.BotRaid
                     {
                         // Returning player
                         info.RaidCount++;
-                        playerData[nid] = info;
+                        playerData[nid] = info; // Update the info back to the dictionary.
                         Log($"Returning Player: {trainer.OT} | TID: {trainer.DisplayTID} | NID: {nid} | Raids: {info.RaidCount}");
                     }
                 }
+                catch (IndexOutOfRangeException ex)
+                {
+                    Log($"Index out of range exception caught: {ex.Message}");
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    Log($"An unknown error occurred: {ex.Message}");
+                    return false;
+                }
+            }
 
-                // Save player data after processing all players.
-                storage.SavePlayerData(playerData);
-                return true;
-            }
-            catch (IndexOutOfRangeException ex)
-            {
-                Log($"Index out of range exception caught: {ex.Message}");
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Log($"An unknown error occurred: {ex.Message}");
-                return false;
-            }
+            // Save player data after processing all players.
+            storage.SavePlayerData(playerData);
+            return true;
         }
 
         /// <summary>
@@ -1025,46 +943,58 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// <summary>
         /// Processes battle actions during the raid
         /// </summary>
+        /// <summary>
+        /// Enhanced method to detect disconnections during raid battles
+        /// </summary>
         private async Task<bool> ProcessBattleActions(CancellationToken token)
         {
             int nextUpdateMinute = 2;
             DateTime battleStartTime = DateTime.Now;
             bool hasPerformedAction1 = false;
-            bool timedOut = false;
             bool hasPressedHome = false;
-            const int battleTimeoutMinutes = 15;
 
-            while (await IsConnectedToLobby(token).ConfigureAwait(false))
+            DateTime lastConnectionCheck = DateTime.Now;
+            bool isConnected = true;
+
+            // loop directly on the connection check
+            while (isConnected)
             {
-                // Check if still in raid
-                if (!await IsInRaid(token).ConfigureAwait(false))
+                // Only check connection every 5 seconds to reduce overhead
+                if ((DateTime.Now - lastConnectionCheck).TotalSeconds >= 5)
                 {
-                    Log("Not in raid anymore, stopping battle actions.");
-                    return false;
+                    isConnected = await IsConnectedToLobby(token).ConfigureAwait(false);
+                    lastConnectionCheck = DateTime.Now;
+                }
+
+                if ((DateTime.Now - lastConnectionCheck).TotalSeconds < 1) // Only if we just checked connection
+                {
+                    bool inRaid = await IsInRaid(token).ConfigureAwait(false);
+                    if (!inRaid)
+                    {
+                        Log("Not in raid anymore, stopping battle actions.");
+                        return false;
+                    }
                 }
 
                 TimeSpan timeInBattle = DateTime.Now - battleStartTime;
 
-                // Check for battle timeout
-                if (timeInBattle.TotalMinutes >= battleTimeoutMinutes)
+                // Check for timeout (10 minutes)
+                if (timeInBattle.TotalMinutes >= 10)
                 {
-                    Log("Battle timed out after 15 minutes. Even Netflix asked if I was still watching...");
-                    timedOut = true;
-                    break;
+                    Log("Battle timed out after 10 minutes.");
+                    return false;
                 }
 
-                // Handle the first action with a delay
+                // Action handling
                 if (!hasPerformedAction1)
                 {
                     int action1DelayInSeconds = _settings.ActiveRaids[RotationCount].Action1Delay;
                     var action1Name = _settings.ActiveRaids[RotationCount].Action1;
                     int action1DelayInMilliseconds = action1DelayInSeconds * 1000;
-
-                    Log($"Waiting {action1DelayInSeconds} seconds. No rush, we're chilling.");
+                    Log($"Waiting {action1DelayInSeconds} seconds.");
                     await Task.Delay(action1DelayInMilliseconds, token).ConfigureAwait(false);
                     await MyActionMethod(token).ConfigureAwait(false);
-                    Log($"{action1Name} done. Wasn't that fun?");
-
+                    Log($"{action1Name} done.");
                     hasPerformedAction1 = true;
                 }
                 else
@@ -1077,36 +1007,21 @@ namespace SysBot.Pokemon.SV.BotRaid
                             break;
 
                         case RaidAction.MashA:
-                            if (await IsConnectedToLobby(token).ConfigureAwait(false))
-                            {
-                                int mashADelayInMilliseconds = (int)(_settings.LobbyOptions.MashADelay * 1000);
-                                await Click(A, mashADelayInMilliseconds, token).ConfigureAwait(false);
-                            }
+                            int mashADelayInMilliseconds = (int)(_settings.LobbyOptions.MashADelay * 1000);
+                            await Click(A, mashADelayInMilliseconds, token).ConfigureAwait(false);
                             break;
                     }
                 }
 
-                // Periodic battle status log at 2-minute intervals
+                // Status logging
                 if (timeInBattle.TotalMinutes >= nextUpdateMinute)
                 {
                     Log($"{nextUpdateMinute} minutes have passed. We are still in battle...");
                     nextUpdateMinute += 2;
                 }
-
-                // Check if the battle has been ongoing for 6 minutes
-                if (timeInBattle.TotalMinutes >= 6 && !hasPressedHome)
-                {
-                    // Hit Home button twice in case we are stuck
-                    await Click(HOME, 0_500, token).ConfigureAwait(false);
-                    await Click(HOME, 0_500, token).ConfigureAwait(false);
-                    hasPressedHome = true;
-                }
-
-                // Wait some time before the next iteration to prevent a tight loop
-                await Task.Delay(1000, token);
             }
-
-            return !timedOut;
+            // Raid Ended
+            return true;
         }
 
         /// <summary>
@@ -1860,6 +1775,54 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// </summary>
         private async Task<int> PrepareForRaid(CancellationToken token)
         {
+            if (!await IsOnOverworld(_overworldOffset, token).ConfigureAwait(false))
+            {
+                Log("Not on overworld, reopening game.");
+                await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+                return 0;
+            }
+
+            // Check if player is near any active den
+            var playerLocation = await GetPlayersLocation(token);
+            var currentRegion = await DetectCurrentRegion(token);
+            var activeRaids = await GetActiveRaidLocations(currentRegion, token);
+
+            if (activeRaids.Count > 0)
+            {
+                // Find nearest active den
+                var nearestRaid = activeRaids
+                    .OrderBy(raid => CalculateDistance(playerLocation,
+                        (raid.Coordinates[0], raid.Coordinates[1], raid.Coordinates[2])))
+                    .First();
+
+                const float threshold = 2.0f;
+                float distance = CalculateDistance(playerLocation,
+                    (nearestRaid.Coordinates[0], nearestRaid.Coordinates[1], nearestRaid.Coordinates[2]));
+
+                if (distance >= threshold)
+                {
+                    Log($"Player is too far from nearest den (distance: {distance:F2}). Restarting game to teleport.");
+                    await CloseGame(_hub.Config, token).ConfigureAwait(false);
+                    await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
+                    return 2;
+                }
+            }
+            else
+            {
+                Log("No active dens found. Restarting game to find and teleport to a valid den.");
+                await CloseGame(_hub.Config, token).ConfigureAwait(false);
+                await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
+                return 2;
+            }
+
+            if (!await ConnectToOnline(_hub.Config, token))
+            {
+                // ConnectToOnline already handles retries and waiting periods
+                // If it returns false, we've likely tried multiple times and failed
+                Log("Failed to connect online after multiple attempts. Returning to preparation.");
+                return 0;
+            }
+
             if (_shouldRefreshMap)
             {
                 _shouldRefreshMap = false;
@@ -1951,10 +1914,6 @@ namespace SysBot.Pokemon.SV.BotRaid
             await Task.Delay(0_500, token).ConfigureAwait(false);
             await SwitchPartyPokemon(token).ConfigureAwait(false);
             await Task.Delay(1_500, token).ConfigureAwait(false);
-
-            if (!await RecoverToOverworld(token).ConfigureAwait(false))
-                return 0;
-
             await Click(A, 3_000, token).ConfigureAwait(false);
             await Click(A, 3_000, token).ConfigureAwait(false);
 
@@ -2013,7 +1972,9 @@ namespace SysBot.Pokemon.SV.BotRaid
         private async Task<bool> RecoverToOverworld(CancellationToken token)
         {
             if (await IsOnOverworld(_overworldOffset, token).ConfigureAwait(false))
+            {
                 return true;
+            }
 
             var attempts = 0;
             const int maxAttempts = 30;
@@ -2022,13 +1983,19 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 attempts++;
                 if (attempts >= maxAttempts)
+                {
+                    Log($"Recovery exceeded maximum attempts ({maxAttempts})");
                     break;
+                }
 
                 for (int i = 0; i < 20; i++)
                 {
                     await Click(B, 1_000, token).ConfigureAwait(false);
                     if (await IsOnOverworld(_overworldOffset, token).ConfigureAwait(false))
+                    {
+                        Log($"Successfully reached overworld after {attempts} attempts");
                         return true;
+                    }
                 }
             }
 
@@ -2041,59 +2008,6 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             await Task.Delay(1_000, token).ConfigureAwait(false);
             return true;
-        }
-
-        /// <summary>
-        /// Rolls back the game time by one hour
-        /// </summary>
-        private async Task RollBackHour(CancellationToken token)
-        {
-            for (int i = 0; i < 2; i++)
-                await Click(B, 0_150, token).ConfigureAwait(false);
-
-            Log("Navigating to time settings.");
-
-            for (int i = 0; i < 2; i++)
-                await Click(DRIGHT, 0_150, token).ConfigureAwait(false);
-
-            await Click(DDOWN, 0_150, token).ConfigureAwait(false);
-            await Click(DRIGHT, 0_150, token).ConfigureAwait(false);
-            await Click(A, 1_250, token).ConfigureAwait(false); // Enter settings
-
-            await PressAndHold(DDOWN, 2_000, 0_250, token).ConfigureAwait(false); // Scroll to system settings
-            await Click(A, 1_250, token).ConfigureAwait(false);
-
-            if (_settings.MiscSettings.UseOvershoot)
-            {
-                await PressAndHold(DDOWN, _settings.MiscSettings.HoldTimeForRollover, 1_000, token).ConfigureAwait(false);
-                await Click(DUP, 0_500, token).ConfigureAwait(false);
-            }
-            else
-            {
-                for (int i = 0; i < 39; i++)
-                    await Click(DDOWN, 0_100, token).ConfigureAwait(false);
-            }
-
-            await Click(A, 1_250, token).ConfigureAwait(false);
-
-            for (int i = 0; i < 2; i++)
-                await Click(DDOWN, 0_150, token).ConfigureAwait(false);
-
-            await Click(A, 0_500, token).ConfigureAwait(false);
-
-            for (int i = 0; i < 3; i++) // Navigate to the hour setting
-                await Click(DRIGHT, 0_200, token).ConfigureAwait(false);
-
-            Log("Rolling Time Back 1 Hour.");
-
-            // Roll back the hour by 1
-            await Click(DDOWN, 0_200, token).ConfigureAwait(false);
-
-            for (int i = 0; i < 8; i++) // Mash DRIGHT to confirm
-                await Click(DRIGHT, 0_200, token).ConfigureAwait(false);
-
-            await Click(A, 0_200, token).ConfigureAwait(false); // Confirm date/time change
-            await Click(HOME, 1_000, token).ConfigureAwait(false); // Back to title screen
         }
 
         /// <summary>
@@ -2237,41 +2151,32 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             while (!full && DateTime.Now < endTime)
             {
-                if (!await IsConnectedToLobby(token))
-                    return (false, lobbyTrainers);
-
                 for (int i = 0; i < 3; i++)
                 {
                     var player = i + 2;
                     Log($"Waiting for Player {player} to load...");
 
-                    if (!await IsConnectedToLobby(token))
-                        return (false, lobbyTrainers);
-
                     var nidOfs = _teraNIDOffsets[i];
                     var data = await SwitchConnection.ReadBytesAbsoluteAsync(nidOfs, 8, token).ConfigureAwait(false);
                     var nid = BitConverter.ToUInt64(data, 0);
+
+                    // Wait for NID to be non-zero
                     while (nid == 0 && DateTime.Now < endTime)
                     {
                         await Task.Delay(0_500, token).ConfigureAwait(false);
-
-                        if (!await IsConnectedToLobby(token))
-                            return (false, lobbyTrainers);
 
                         data = await SwitchConnection.ReadBytesAbsoluteAsync(nidOfs, 8, token).ConfigureAwait(false);
                         nid = BitConverter.ToUInt64(data, 0);
                     }
 
-                    List<long> ptr = new List<long>(Offsets.Trader2MyStatusPointer);
+                    List<long> ptr = new(Offsets.Trader2MyStatusPointer);
                     ptr[2] += i * 0x30;
                     var trainer = await GetTradePartnerMyStatus(ptr, token).ConfigureAwait(false);
 
+                    // Wait for trainer data to be valid
                     while (trainer.OT.Length == 0 && DateTime.Now < endTime)
                     {
                         await Task.Delay(0_500, token).ConfigureAwait(false);
-
-                        if (!await IsConnectedToLobby(token))
-                            return (false, lobbyTrainers);
 
                         trainer = await GetTradePartnerMyStatus(ptr, token).ConfigureAwait(false);
                     }
@@ -2300,6 +2205,12 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                     if (full || DateTime.Now >= endTime)
                         break;
+                }
+
+                // Add a small delay between iterations to prevent tight loops
+                if (!full && DateTime.Now < endTime)
+                {
+                    await Task.Delay(1_000, token).ConfigureAwait(false);
                 }
             }
 
@@ -2331,8 +2242,18 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// </summary>
         private async Task<bool> IsConnectedToLobby(CancellationToken token)
         {
-            var data = await SwitchConnection.ReadBytesMainAsync(Offsets.TeraLobbyIsConnected, 1, token).ConfigureAwait(false);
-            return data[0] != 0x00;
+            try
+            {
+                var data = await SwitchConnection.ReadBytesMainAsync(Offsets.TeraLobbyIsConnected, 1, token).ConfigureAwait(false);
+                bool isConnected = data[0] != 0x00;
+
+                return isConnected;
+            }
+            catch (Exception ex)
+            {
+                Log($"Error checking lobby connection: {ex.Message}");
+                return false; // Assume not connected if we can't read the memory
+            }
         }
 
         /// <summary>

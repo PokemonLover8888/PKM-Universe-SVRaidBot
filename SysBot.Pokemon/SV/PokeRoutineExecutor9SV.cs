@@ -519,74 +519,6 @@ namespace SysBot.Pokemon.SV
             };
         }
 
-        public static string[] ProcessRaidPlaceholders(string[] description, PKM pk)
-        {
-            string[] raidDescription = [];
-
-            if (description.Length > 0)
-            {
-                raidDescription = [.. description];
-            }
-
-            string markEntryText = "";
-            string markTitle = "";
-            string scaleText = "";
-            string scaleNumber = "";
-            string shinySymbol = pk.ShinyXor == 0 ? "■" : pk.ShinyXor <= 16 ? "★" : "";
-            string shinySymbolText = pk.ShinyXor == 0 ? "Square Shiny" : pk.ShinyXor <= 16 ? "Star Shiny" : "";
-            string shiny = pk.ShinyXor <= 16 ? "Shiny" : "";
-            string species = SpeciesName.GetSpeciesNameGeneration(pk.Species, 2, 9);
-            string IVList = $"{pk.IV_HP}/{pk.IV_ATK}/{pk.IV_DEF}/{pk.IV_SPA}/{pk.IV_SPD}/{pk.IV_SPE}";
-            string MaxIV = "";
-            string HP = pk.IV_HP.ToString();
-            string ATK = pk.IV_ATK.ToString();
-            string DEF = pk.IV_DEF.ToString();
-            string SPA = pk.IV_SPA.ToString();
-            string SPD = pk.IV_SPD.ToString();
-            string SPE = pk.IV_SPE.ToString();
-            string nature = $"{pk.Nature}";
-            string genderSymbol = pk.Gender == 0 ? "♂" : pk.Gender == 1 ? "♀" : "⚥";
-            string genderText = $"{(Gender)pk.Gender}";
-            string ability = $"{GameInfo.GetStrings(1).Ability[pk.Ability]}";
-
-            if (pk.IV_HP == 31 && pk.IV_ATK == 31 && pk.IV_DEF == 31 && pk.IV_SPA == 31 && pk.IV_SPD == 31 && pk.IV_SPE == 31)
-            {
-                MaxIV = "6IV";
-            }
-
-            _ = RaidExtensions<PK9>.HasMark((IRibbonIndex)pk, out RibbonIndex mark);
-            if (mark == RibbonIndex.MarkMightiest)
-            {
-                markEntryText = "the Unrivaled";
-            }
-
-            if (pk is PK9 pkl)
-            {
-                scaleText = $"{PokeSizeDetailedUtil.GetSizeRating(pkl.Scale)}";
-                scaleNumber = pkl.Scale.ToString();
-                if (pkl.Scale == 0)
-                {
-                    markEntryText = "The Teeny";
-                    markTitle = "Teeny";
-                }
-                if (pkl.Scale == 255)
-                {
-                    markEntryText = "The Great";
-                    markTitle = "Jumbo";
-                }
-            }
-
-            for (int i = 0; i < raidDescription.Length; i++)
-            {
-                raidDescription[i] = raidDescription[i].Replace("{markEntryText}", markEntryText)
-                        .Replace("{markTitle}", markTitle).Replace("{scaleText}", scaleText).Replace("{scaleNumber}", scaleNumber).Replace("{shinySymbol}", shinySymbol).Replace("{shinySymbolText}", shinySymbolText)
-                        .Replace("{shinyText}", shiny).Replace("{species}", species).Replace("{IVList}", IVList).Replace("{MaxIV}", MaxIV).Replace("{HP}", HP).Replace("{ATK}", ATK).Replace("{DEF}", DEF).Replace("{SPA}", SPA)
-                        .Replace("{SPD}", SPD).Replace("{SPE}", SPE).Replace("{nature}", nature).Replace("{ability}", ability).Replace("{genderSymbol}", genderSymbol).Replace("{genderText}", genderText);
-            }
-
-            return raidDescription;
-        }
-
         // Save Block Additions from TeraFinder/RaidCrawler/sv-livemap
         public async Task<object?> ReadBlock(DataBlock block, CancellationToken token)
         {
@@ -605,16 +537,16 @@ namespace SysBot.Pokemon.SV
         public async Task<bool> WriteEncryptedBlockSafe(DataBlock block, object? toExpect, object toWrite, CancellationToken token)
         {
             return toExpect != default && toWrite != default
-&& block.Type switch
-{
-    SCTypeCode.Object => await WriteEncryptedBlockObject(block, (byte[])toExpect, (byte[])toWrite, token),
-    SCTypeCode.Array => await WriteEncryptedBlockArray(block, (byte[])toExpect, (byte[])toWrite, token).ConfigureAwait(false),
-    SCTypeCode.Bool1 or SCTypeCode.Bool2 or SCTypeCode.Bool3 => await WriteEncryptedBlockBool(block, (bool)toExpect, (bool)toWrite, token).ConfigureAwait(false),
-    SCTypeCode.Byte or SCTypeCode.SByte => await WriteEncryptedBlockByte(block, (byte)toExpect, (byte)toWrite, token).ConfigureAwait(false),
-    SCTypeCode.UInt32 => await WriteEncryptedBlockUint(block, (uint)toExpect, (uint)toWrite, token).ConfigureAwait(false),
-    SCTypeCode.Int32 => await WriteEncryptedBlockInt32(block, (int)toExpect, (int)toWrite, token).ConfigureAwait(false),
-    _ => throw new NotSupportedException($"Block {block.Name} (Type {block.Type}) is currently not supported.")
-};
+            && block.Type switch
+            {
+                SCTypeCode.Object => await WriteEncryptedBlockObject(block, (byte[])toExpect, (byte[])toWrite, token),
+                SCTypeCode.Array => await WriteEncryptedBlockArray(block, (byte[])toExpect, (byte[])toWrite, token).ConfigureAwait(false),
+                SCTypeCode.Bool1 or SCTypeCode.Bool2 or SCTypeCode.Bool3 => await WriteEncryptedBlockBool(block, (bool)toExpect, (bool)toWrite, token).ConfigureAwait(false),
+                SCTypeCode.Byte or SCTypeCode.SByte => await WriteEncryptedBlockByte(block, (byte)toExpect, (byte)toWrite, token).ConfigureAwait(false),
+                SCTypeCode.UInt32 => await WriteEncryptedBlockUint(block, (uint)toExpect, (uint)toWrite, token).ConfigureAwait(false),
+                SCTypeCode.Int32 => await WriteEncryptedBlockInt32(block, (int)toExpect, (int)toWrite, token).ConfigureAwait(false),
+                _ => throw new NotSupportedException($"Block {block.Name} (Type {block.Type}) is currently not supported.")
+            };
         }
 
         private async Task<bool> WriteEncryptedBlockInt32(DataBlock block, int valueToExpect, int valueToInject, CancellationToken token)
