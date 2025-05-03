@@ -4509,16 +4509,14 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 throw new InvalidOperationException($"No encounter found for seed {seedValue} with progress {raidCrawlerProgress} and group ID {groupId}");
             }
 
-            // Get rewards and other properties
+            // IMPORTANT: Get rewards first with the RaidCrawler approach (keep this unchanged)
             var reward = encounter.GetRewards(Container, raid, 0);
             var stars = raid.IsEvent ? encounter.Stars : raid.GetStarCount(raid.Difficulty, raidCrawlerProgress, raid.IsBlack);
             var teraType = raid.GetTeraType(encounter);
             var form = encounter.Form;
             var level = encounter.Level;
 
-            // Get PersonalInfo for the gender ratio
             var pi = PersonalTable.SV.GetFormEntry(encounter.Species, encounter.Form);
-
             var pk = new PK9
             {
                 Species = encounter.Species,
@@ -4532,7 +4530,6 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             if (raid.IsShiny)
                 pk.SetIsShiny(true);
 
-            // Create properly configured parameters
             var param = new GenerateParam9(
                 Species: encounter.Species,
                 GenderRatio: pi.Gender,
@@ -4546,11 +4543,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 Shiny: raid.IsShiny ? Shiny.Always : Shiny.Never
             );
 
-            // Convert the uint seed to ulong explicitly
-            ulong seedUlong = raid.Seed;
-
-            // Generate the Pokémon data
-            bool generationSuccess = Encounter9RNG.GenerateData(pk, param, EncounterCriteria.Unrestricted, seedUlong);
+            // Generate the Pokémon data with the seed
+            bool generationSuccess = Encounter9RNG.GenerateData(pk, param, EncounterCriteria.Unrestricted, seedUint);
 
             var strings = GameInfo.GetStrings(1);
             var useTypeEmojis = moveTypeEmojis;
@@ -4609,8 +4603,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 movesList += $"**Extra Moves:**\n{extraMoves}";
             }
 
+            // IMPORTANT: Process rewards exactly as before
             var specialRewards = string.Empty;
-
             try
             {
                 specialRewards = GetSpecialRewards(reward, rewardsToShow);
