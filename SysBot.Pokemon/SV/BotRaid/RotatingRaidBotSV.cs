@@ -2048,7 +2048,8 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
 
             Log("Preparing lobby...");
-
+            if (!await RecoverToOverworld(token).ConfigureAwait(false))
+                return 0;
             await Task.Delay(0_500, token).ConfigureAwait(false);
             await SwitchPartyPokemon(token).ConfigureAwait(false);
             await Task.Delay(1_500, token).ConfigureAwait(false);
