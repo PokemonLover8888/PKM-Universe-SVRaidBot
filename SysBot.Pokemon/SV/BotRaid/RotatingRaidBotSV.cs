@@ -2081,7 +2081,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             if (len.Length > 1 && _emptyRaid == 0)
             {
                 Log("Preparing PartyPK. Sit tight.");
-                await Task.Delay(2_500 + settings.ExtraTimePartyPK, token).ConfigureAwait(false);
+                await Task.Delay(3_000 + settings.ExtraTimePartyPK, token).ConfigureAwait(false);
                 await SetCurrentBox(0, token).ConfigureAwait(false);
                 var res = string.Join("\n", _settings.ActiveRaids[RotationCount].PartyPK);
 
