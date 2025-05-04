@@ -2269,8 +2269,7 @@ namespace SysBot.Pokemon.SV.BotRaid
         private async Task<(bool, List<(ulong, RaidMyStatus)>)> ReadTrainers(CancellationToken token)
         {
             if (!await IsConnectedToLobby(token))
-                return (false, []);
-
+                return (false, new List<(ulong, RaidMyStatus)>());
             await EnqueueEmbed(null, "", false, false, false, false, token).ConfigureAwait(false);
 
             List<(ulong, RaidMyStatus)> lobbyTrainers = [];
@@ -2291,19 +2290,26 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             while (!full && DateTime.Now < endTime)
             {
+                if (!await IsConnectedToLobby(token))
+                    return (false, lobbyTrainers);
+
                 for (int i = 0; i < 3; i++)
                 {
                     var player = i + 2;
                     Log($"Waiting for Player {player} to load...");
 
+                    if (!await IsConnectedToLobby(token))
+                        return (false, lobbyTrainers);
+
                     var nidOfs = _teraNIDOffsets[i];
                     var data = await SwitchConnection.ReadBytesAbsoluteAsync(nidOfs, 8, token).ConfigureAwait(false);
                     var nid = BitConverter.ToUInt64(data, 0);
-
-                    // Wait for NID to be non-zero
                     while (nid == 0 && DateTime.Now < endTime)
                     {
                         await Task.Delay(0_500, token).ConfigureAwait(false);
+
+                        if (!await IsConnectedToLobby(token))
+                            return (false, lobbyTrainers);
 
                         data = await SwitchConnection.ReadBytesAbsoluteAsync(nidOfs, 8, token).ConfigureAwait(false);
                         nid = BitConverter.ToUInt64(data, 0);
@@ -2313,10 +2319,12 @@ namespace SysBot.Pokemon.SV.BotRaid
                     ptr[2] += i * 0x30;
                     var trainer = await GetTradePartnerMyStatus(ptr, token).ConfigureAwait(false);
 
-                    // Wait for trainer data to be valid
                     while (trainer.OT.Length == 0 && DateTime.Now < endTime)
                     {
                         await Task.Delay(0_500, token).ConfigureAwait(false);
+
+                        if (!await IsConnectedToLobby(token))
+                            return (false, lobbyTrainers);
 
                         trainer = await GetTradePartnerMyStatus(ptr, token).ConfigureAwait(false);
                     }
@@ -2345,12 +2353,6 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                     if (full || DateTime.Now >= endTime)
                         break;
-                }
-
-                // Add a small delay between iterations to prevent tight loops
-                if (!full && DateTime.Now < endTime)
-                {
-                    await Task.Delay(1_000, token).ConfigureAwait(false);
                 }
             }
 
