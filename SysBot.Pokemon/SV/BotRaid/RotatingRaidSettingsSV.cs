@@ -599,10 +599,7 @@ namespace SysBot.Pokemon
             public DTFormat DateTimeFormat { get; set; } = DTFormat.MMDDYY;
 
             [Category(Hosting), Description("When enabled, the bot will use the overshoot method to apply rollover correction, otherwise will use DDOWN clicks.")]
-            public bool UseOvershoot { get; set; } = false;
-
-            [Category(Hosting), Description("Amount of times to hit DDOWN for accessing date/time settings during rollover correction. [Default: 39 Clicks]")]
-            public int DDOWNClicks { get; set; } = 39;
+            public bool UseOvershoot { get; set; } = true;
 
             [Category(Hosting), Description("Time to scroll down duration in milliseconds for accessing date/time settings during rollover correction. You want to have it overshoot the Date/Time setting by 1, as it will click DUP after scrolling down. [Default: 930ms]")]
             public int HoldTimeForRollover { get; set; } = 900;
