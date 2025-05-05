@@ -21,6 +21,7 @@ using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using pkNX.Structures.FlatBuffers;
 using SysBot.Pokemon.Helpers;
+using Newtonsoft.Json.Linq;
 
 namespace SysBot.Pokemon.SV.BotRaid
 {
@@ -863,11 +864,11 @@ namespace SysBot.Pokemon.SV.BotRaid
                 bool partyDipped = lobbyTrainersFinal.Count == 0;
                 if (partyDipped)
                 {
-                    Log("Party has left after joining. Marking raid as lost and restarting game.");
-                    _lossCount++; // Mark as a loss
-                    _raidCount++; // Count this as a completed raid
+                    Log("Party has left after joining. Restarting game.");
 
-                    await PerformRebootAndReset(token);
+                    // Skip HandleEndOfRaidActions and go straight to FinalizeRaidCompletion
+                    await ReOpenGame(_hub.Config, token);
+                    await FinalizeRaidCompletion(trainers, true, token);
                     return;
                 }
 
@@ -890,7 +891,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 await PerformRebootAndReset(token);
             }
         }
-
+        
         /// <summary>
         /// Performs a reboot and reset of the game when an error occurs
         /// </summary>
