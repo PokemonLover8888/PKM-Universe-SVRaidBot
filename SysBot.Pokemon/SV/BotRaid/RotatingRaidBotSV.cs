@@ -1086,12 +1086,9 @@ namespace SysBot.Pokemon.SV.BotRaid
             int nextUpdateMinute = 2;
             DateTime battleStartTime = DateTime.Now;
             bool hasPerformedAction1 = false;
-
-            // Track last connection check time and status
             DateTime lastConnectionCheck = DateTime.Now;
             bool isConnected = true;
 
-            // Main battle loop
             while (isConnected)
             {
                 // Check connection only every 5 seconds
@@ -1102,8 +1099,20 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                     if (!isConnected)
                     {
-                        Log("Lost connection to lobby, stopping battle actions.");
-                        break;
+                        Log("Lost connection to lobby, waiting 6 minutes before restarting game to avoid soft ban.");
+                        const int cooldownMinutes = 6;
+                        DateTime endTime = DateTime.Now.AddMinutes(cooldownMinutes);
+
+                        // Wait with a single status update halfway through
+                        await Task.Delay(TimeSpan.FromMinutes(cooldownMinutes / 2), token).ConfigureAwait(false);
+
+                        if (!token.IsCancellationRequested)
+                        {
+                            Log($"{cooldownMinutes / 2} minutes elapsed, waiting {cooldownMinutes / 2} more minutes.");
+                            await Task.Delay(TimeSpan.FromMinutes(cooldownMinutes / 2), token).ConfigureAwait(false);
+                        }
+                        // Now exit to avoid softbans.  Record Raid Lost.
+                        return false;
                     }
                 }
 
@@ -1428,43 +1437,6 @@ namespace SysBot.Pokemon.SV.BotRaid
             else
             {
                 Log("No trainers available to check win/loss status.");
-            }
-        }
-
-        /// <summary>
-        /// Clears all active raid session data
-        /// </summary>
-        private async Task ResetRaidSessionData(CancellationToken token)
-        {
-            Log("Resetting raid session data...");
-
-            try
-            {
-                // Clear all NID offsets
-                for (int i = 0; i < _teraNIDOffsets.Length; i++)
-                {
-                    if (_teraNIDOffsets[i] != 0)
-                    {
-                        await SwitchConnection.WriteBytesAbsoluteAsync(new byte[32], _teraNIDOffsets[i], token).ConfigureAwait(false);
-                    }
-                }
-
-                // Clear trainer data in memory
-                for (int i = 0; i < 3; i++)
-                {
-                    List<long> ptr = [.. Offsets.Trader2MyStatusPointer];
-                    ptr[2] += i * 0x30;
-                    await SwitchConnection.PointerPoke(new byte[16], ptr, token).ConfigureAwait(false);
-                }
-
-                // Clear tracking dictionaries
-                _raidTracker.Clear();
-
-                Log("Raid session data reset complete.");
-            }
-            catch (Exception ex)
-            {
-                Log($"Error resetting raid session data: {ex.Message}");
             }
         }
 
@@ -2116,7 +2088,6 @@ namespace SysBot.Pokemon.SV.BotRaid
                 }
             }
 
-            Log("Preparing lobby...");
             if (!await RecoverToOverworld(token).ConfigureAwait(false))
                 return 0;
             await Task.Delay(0_500, token).ConfigureAwait(false);
@@ -2124,6 +2095,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             await Task.Delay(1_500, token).ConfigureAwait(false);
             if (!await RecoverToOverworld(token).ConfigureAwait(false))
                 return 0;
+            Log("Preparing lobby...");
             await Click(A, 3_000, token).ConfigureAwait(false);
             await Click(A, 3_000, token).ConfigureAwait(false);
 
@@ -2652,8 +2624,6 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
 
             _raidMemoryManager = new RaidMemoryManager(SwitchConnection, _raidBlockPointerP, _raidBlockPointerK, _raidBlockPointerB);
-
-            await ResetRaidSessionData(token).ConfigureAwait(false);
 
             await DetectCurrentRegion(token);
 
@@ -3486,8 +3456,44 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         /// </summary>
         private async Task<bool> ConnectToOnline(PokeRaidHubConfig config, CancellationToken token)
         {
+            // First check if already connected - if so, return success immediately
+            try
+            {
+                bool alreadyConnected = await IsConnectedOnline(_connectedOffset, token).ConfigureAwait(false);
+                if (alreadyConnected)
+                {
+                    // Verify the connection with additional checks for stability
+                    bool stable = true;
+                    for (int i = 0; i < 3; i++)
+                    {
+                        await Task.Delay(500, token).ConfigureAwait(false);
+                        if (!await IsConnectedOnline(_connectedOffset, token).ConfigureAwait(false))
+                        {
+                            stable = false;
+                            break;
+                        }
+                    }
+
+                    if (stable)
+                    {
+                        Log("Already connected online, skipping connection process");
+                        await Task.Delay(500, token).ConfigureAwait(false);
+                        return true;
+                    }
+                    else
+                    {
+                        Log("Connection appears unstable, attempting to reconnect");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error checking online status: {ex.Message}");
+            }
+
+            // If we reach here, we need to connect (or reconnect)
             int attemptCount = 0;
-            const int maxAttempts = 7;
+            const int maxAttempts = 5;
             const int waitTimeMinutes = 10;
 
             while (attemptCount < maxAttempts && !token.IsCancellationRequested)
@@ -3524,7 +3530,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             Color = Color.Red,
                             ThumbnailUrl = "https://raw.githubusercontent.com/bdawg1989/sprites/main/imgs/x.png"
                         };
-                        EchoUtil.RaidEmbed(null, "", embed);
+                        _ = await EchoUtil.RaidEmbed(null, "", embed);
 
                         await Click(B, 0_500, token).ConfigureAwait(false);
                         await Click(B, 0_500, token).ConfigureAwait(false);
@@ -3540,7 +3546,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                     // Execute connection inputs
                     await Click(X, 3_000, token).ConfigureAwait(false);
                     await Click(L, 5_000 + config.Timings.ExtraTimeConnectOnline, token).ConfigureAwait(false);
-                    await Task.Delay(5000, token).ConfigureAwait(false);
+                    await Task.Delay(3000, token).ConfigureAwait(false);
+                    await RecoverToOverworld(token).ConfigureAwait(false);
 
                     // Check connection with stability verification
                     bool connected = await IsConnectedOnline(_connectedOffset, token).ConfigureAwait(false);
