@@ -1206,8 +1206,40 @@ namespace SysBot.Pokemon.SV.BotRaid
             Log("Returning to overworld...");
             await Task.Delay(2_500, token).ConfigureAwait(false);
 
-            while (!await IsOnOverworld(_overworldOffset, token).ConfigureAwait(false))
-                await Click(A, 1_000, token).ConfigureAwait(false);
+            if (!await RecoverToOverworld(token).ConfigureAwait(false))
+            {
+                Log("Failed to return to overworld after raid, rebooting game");
+                await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+
+                // After rebooting, attempt to continue with the raid rotation
+                if (ready)
+                {
+                    await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
+
+                    if (_settings.RaidSettings.KeepDaySeed)
+                        await OverrideTodaySeed(token).ConfigureAwait(false);
+
+                    return;
+                }
+                else
+                {
+                    if (_settings.ActiveRaids.Count > 1)
+                    {
+                        RotationCount = (RotationCount + 1) % _settings.ActiveRaids.Count;
+                        Log($"Moving on to next rotation for {_settings.ActiveRaids[RotationCount].Species}.");
+                        await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await StartGame(_hub.Config, token).ConfigureAwait(false);
+                    }
+
+                    if (_settings.RaidSettings.KeepDaySeed)
+                        await OverrideTodaySeed(token).ConfigureAwait(false);
+
+                    return;
+                }
+            }
 
             await LocateSeedIndex(token).ConfigureAwait(false);
             await CountRaids(trainers, token).ConfigureAwait(false);
@@ -1396,6 +1428,43 @@ namespace SysBot.Pokemon.SV.BotRaid
             else
             {
                 Log("No trainers available to check win/loss status.");
+            }
+        }
+
+        /// <summary>
+        /// Clears all active raid session data
+        /// </summary>
+        private async Task ResetRaidSessionData(CancellationToken token)
+        {
+            Log("Resetting raid session data...");
+
+            try
+            {
+                // Clear all NID offsets
+                for (int i = 0; i < _teraNIDOffsets.Length; i++)
+                {
+                    if (_teraNIDOffsets[i] != 0)
+                    {
+                        await SwitchConnection.WriteBytesAbsoluteAsync(new byte[32], _teraNIDOffsets[i], token).ConfigureAwait(false);
+                    }
+                }
+
+                // Clear trainer data in memory
+                for (int i = 0; i < 3; i++)
+                {
+                    List<long> ptr = [.. Offsets.Trader2MyStatusPointer];
+                    ptr[2] += i * 0x30;
+                    await SwitchConnection.PointerPoke(new byte[16], ptr, token).ConfigureAwait(false);
+                }
+
+                // Clear tracking dictionaries
+                _raidTracker.Clear();
+
+                Log("Raid session data reset complete.");
+            }
+            catch (Exception ex)
+            {
+                Log($"Error resetting raid session data: {ex.Message}");
             }
         }
 
@@ -2584,6 +2653,8 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             _raidMemoryManager = new RaidMemoryManager(SwitchConnection, _raidBlockPointerP, _raidBlockPointerK, _raidBlockPointerB);
 
+            await ResetRaidSessionData(token).ConfigureAwait(false);
+
             await DetectCurrentRegion(token);
 
             // First run initialization
@@ -3416,7 +3487,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         private async Task<bool> ConnectToOnline(PokeRaidHubConfig config, CancellationToken token)
         {
             int attemptCount = 0;
-            const int maxAttempts = 5;
+            const int maxAttempts = 7;
             const int waitTimeMinutes = 10;
 
             while (attemptCount < maxAttempts && !token.IsCancellationRequested)
