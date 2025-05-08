@@ -554,7 +554,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                                     if (prepareAttempts >= 2)
                                     {
                                         Log("Failed to prepare the raid after multiple attempts, rebooting game");
-                                        await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+                                        await PerformRebootAndReset(token).ConfigureAwait(false);
                                         break;
                                     }
                                 }
@@ -568,7 +568,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                                 if (prepareAttempts >= 2)
                                 {
                                     Log("Error preparing raid, rebooting game");
-                                    await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+                                    await PerformRebootAndReset(token).ConfigureAwait(false);
                                     break;
                                 }
                             }
@@ -1086,50 +1086,23 @@ namespace SysBot.Pokemon.SV.BotRaid
             int nextUpdateMinute = 2;
             DateTime battleStartTime = DateTime.Now;
             bool hasPerformedAction1 = false;
-            DateTime lastConnectionCheck = DateTime.Now;
-            bool isConnected = true;
 
-            while (isConnected)
+            // Main battle loop
+            while (true)
             {
-                // Check connection only every 5 seconds
-                if ((DateTime.Now - lastConnectionCheck).TotalSeconds >= 5)
-                {
-                    isConnected = await IsConnectedToLobby(token).ConfigureAwait(false);
-                    lastConnectionCheck = DateTime.Now;
-
-                    if (!isConnected)
-                    {
-                        Log("Lost connection to lobby, waiting 6 minutes before restarting game to avoid soft ban.");
-                        const int cooldownMinutes = 6;
-                        DateTime endTime = DateTime.Now.AddMinutes(cooldownMinutes);
-
-                        // Wait with a single status update halfway through
-                        await Task.Delay(TimeSpan.FromMinutes(cooldownMinutes / 2), token).ConfigureAwait(false);
-
-                        if (!token.IsCancellationRequested)
-                        {
-                            Log($"{cooldownMinutes / 2} minutes elapsed, waiting {cooldownMinutes / 2} more minutes.");
-                            await Task.Delay(TimeSpan.FromMinutes(cooldownMinutes / 2), token).ConfigureAwait(false);
-                        }
-                        // Now exit to avoid softbans.  Record Raid Lost.
-                        return false;
-                    }
-                }
-
-                // Always check raid status on each iteration
+                // Check if we're still in raid
                 bool inRaid = await IsInRaid(token).ConfigureAwait(false);
                 if (!inRaid)
                 {
                     Log("Not in raid anymore, stopping battle actions.");
-                    return false;
+                    return true; // Return true as this is normal completion
                 }
 
-                TimeSpan timeInBattle = DateTime.Now - battleStartTime;
-
                 // Check for timeout (10 minutes)
+                TimeSpan timeInBattle = DateTime.Now - battleStartTime;
                 if (timeInBattle.TotalMinutes >= 10)
                 {
-                    Log("Battle timed out after 10 minutes.");
+                    Log("Battle exceeded 10 minutes - restarting game.");
                     return false;
                 }
 
@@ -1171,9 +1144,6 @@ namespace SysBot.Pokemon.SV.BotRaid
                 // Small delay to prevent tight loops
                 await Task.Delay(1000, token).ConfigureAwait(false);
             }
-
-            // Raid ended
-            return true;
         }
 
         /// <summary>
