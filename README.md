@@ -1,7 +1,7 @@
 # Sc/Vi RaidBot
 
 ![Discord Banner 2](https://discord.com/api/guilds/1369342739581505536/widget.png?style=banner2)
-
+ 
 ## Hello, and welcome to my RaidBot Project.
 
 ![image](https://github.com/bdawg1989/NotRaidBot/assets/80122551/258bd7ab-0982-4641-9a3d-41bd192828dc)
