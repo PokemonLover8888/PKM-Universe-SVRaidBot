@@ -1483,25 +1483,7 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                 _seedIndexToReplace = index;
                 Log($"Successfully injected seed {seed:X8} at index {index}");
-
-                // Handle teleportation for event/distribution raids
-                if (crystalType == TeraCrystalType.Might || crystalType == TeraCrystalType.Distribution)
-                {
-                    // Get the appropriate location resource based on the current region
-                    string denLocationResource = IsKitakami
-                        ? "SysBot.Pokemon.SV.BotRaid.DenLocations.den_locations_kitakami.json"
-                        : IsBlueberry
-                            ? "SysBot.Pokemon.SV.BotRaid.DenLocations.den_locations_blueberry.json"
-                            : "SysBot.Pokemon.SV.BotRaid.DenLocations.den_locations_base.json";
-
-                    var denLocations = LoadDenLocations(denLocationResource);
-
-                    if (denIdentifier != null && denLocations.TryGetValue(denIdentifier, out var coordinates))
-                    {
-                        await TeleportToDen(coordinates[0], coordinates[1], coordinates[2], token);
-                        Log($"Successfully teleported to den: {denIdentifier}");
-                    }
-                }
+                await LogPlayerLocation(token);
 
                 return true;
             }
