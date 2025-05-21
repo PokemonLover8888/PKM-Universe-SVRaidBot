@@ -21,6 +21,7 @@ using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using pkNX.Structures.FlatBuffers;
 using SysBot.Pokemon.Helpers;
+using SysBot.Pokemon.SV.BotRaid.Language;
 
 namespace SysBot.Pokemon.SV.BotRaid
 {
@@ -1929,9 +1930,32 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// </summary>
         private async Task<int> PrepareForRaid(CancellationToken token)
         {
-            if (!await IsOnOverworld(_overworldOffset, token).ConfigureAwait(false))
+            try
             {
-                Log("Not on overworld, reopening game.");
+                (bool valid, ulong freshOffset) = await ValidatePointerAll(Offsets.OverworldPointer, token).ConfigureAwait(false);
+                if (valid)
+                {
+                    if (await IsOnOverworld(freshOffset, token).ConfigureAwait(false))
+                    {
+                        _overworldOffset = freshOffset;
+                    }
+                    else
+                    {
+                        Log("Not on overworld (validated pointer check), reopening game.");
+                        await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+                        return 0;
+                    }
+                }
+                else
+                {
+                    Log("Failed to validate overworld pointer, reopening game.");
+                    await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
+                    return 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error validating overworld pointer: {ex.Message}");
                 await ReOpenGame(_hub.Config, token).ConfigureAwait(false);
                 return 0;
             }
@@ -2770,7 +2794,10 @@ namespace SysBot.Pokemon.SV.BotRaid
                 await Task.Delay((int)_settings.EmbedToggles.RequestEmbedTime, token).ConfigureAwait(false);
             }
 
-            // Description can only be up to 4096 characters.
+            // Get the selected language from settings
+            var language = _settings.EmbedToggles.EmbedLanguage;
+
+            // Description can only be up to 4096 characters
             var description = _settings.EmbedToggles.RaidEmbedDescription.Length > 0
                 ? string.Join("\n", _settings.EmbedToggles.RaidEmbedDescription)
                 : "";
@@ -2878,18 +2905,11 @@ namespace SysBot.Pokemon.SV.BotRaid
             long futureUnixTime = futureTime.ToUnixTimeSeconds();
 
             // Create the future time message using Discord's timestamp formatting
-            string futureTimeMessage = $"**Raid Posting: <t:{futureUnixTime}:R>**";
+            string futureTimeMessage = $"**{EmbedLanguageManager.GetLocalizedText("Raid Posting", language)}: <t:{futureUnixTime}:R>**";
 
             // Initialize the EmbedBuilder object
             var embed = new EmbedBuilder()
             {
-                Title = disband
-                    ? $"**Raid canceled: [{_teraRaidCode}]**"
-                    : upnext && _settings.RaidSettings.TotalRaidsToHost != 0
-                        ? $"Raid Ended - Preparing Next Raid!"
-                        : upnext && _settings.RaidSettings.TotalRaidsToHost == 0
-                            ? $"Raid Ended - Preparing Next Raid!"
-                            : "",
                 Color = embedColor,
                 Description = disband
                     ? message
@@ -2904,6 +2924,20 @@ namespace SysBot.Pokemon.SV.BotRaid
                 ImageUrl = imageBytes != null ? $"attachment://{fileName}" : null,
             };
 
+            // Set title based on condition
+            if (disband)
+            {
+                embed.Title = $"**{EmbedLanguageManager.GetLocalizedText("Raid canceled", language)}: [{_teraRaidCode}]**";
+            }
+            else if (upnext && _settings.RaidSettings.TotalRaidsToHost != 0)
+            {
+                embed.Title = $"{EmbedLanguageManager.GetLocalizedText("Raid Ended - Preparing Next Raid", language)}!";
+            }
+            else if (upnext && _settings.RaidSettings.TotalRaidsToHost == 0)
+            {
+                embed.Title = $"{EmbedLanguageManager.GetLocalizedText("Raid Ended - Preparing Next Raid", language)}!";
+            }
+
             if (!raidstart && !upnext && code != "Free For All")
                 await CurrentRaidInfo(null, code, false, false, false, false, turl, false, token).ConfigureAwait(false);
 
@@ -2916,10 +2950,16 @@ namespace SysBot.Pokemon.SV.BotRaid
                 // Calculate uptime
                 TimeSpan uptime = DateTime.Now - StartTime;
 
-                // Check for singular or plural days/hours
-                string dayLabel = uptime.Days == 1 ? "day" : "days";
-                string hourLabel = uptime.Hours == 1 ? "hour" : "hours";
-                string minuteLabel = uptime.Minutes == 1 ? "minute" : "minutes";
+                // Format day/hour/minute labels with appropriate localization
+                string dayLabel = uptime.Days == 1
+                    ? EmbedLanguageManager.GetLocalizedText("day", language)
+                    : EmbedLanguageManager.GetLocalizedText("days", language);
+                string hourLabel = uptime.Hours == 1
+                    ? EmbedLanguageManager.GetLocalizedText("hour", language)
+                    : EmbedLanguageManager.GetLocalizedText("hours", language);
+                string minuteLabel = uptime.Minutes == 1
+                    ? EmbedLanguageManager.GetLocalizedText("minute", language)
+                    : EmbedLanguageManager.GetLocalizedText("minutes", language);
 
                 // Format the uptime string, omitting the part if the value is 0
                 string uptimeFormatted = "";
@@ -2938,9 +2978,15 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                 // Trim any excess whitespace from the string
                 uptimeFormatted = uptimeFormatted.Trim();
+
+                string footerText = $"{EmbedLanguageManager.GetLocalizedText("Completed Raids", language)}: {_raidCount} (W: {_winCount} | L: {_lossCount})\n" +
+                                   $"{EmbedLanguageManager.GetLocalizedText("ActiveRaids", language)}: {raidsInRotationCount} | " +
+                                   $"{EmbedLanguageManager.GetLocalizedText("Uptime", language)}: {uptimeFormatted}\n" +
+                                   disclaimer;
+
                 embed.WithFooter(new EmbedFooterBuilder()
                 {
-                    Text = $"Completed Raids: {_raidCount} (W: {_winCount} | L: {_lossCount})\nActiveRaids: {raidsInRotationCount} | Uptime: {uptimeFormatted}\n" + disclaimer,
+                    Text = footerText,
                     IconUrl = programIconUrl
                 });
             }
@@ -2954,55 +3000,46 @@ namespace SysBot.Pokemon.SV.BotRaid
             // Only include author (header) if not posting 'upnext' embed with the 'Preparing Raid' title
             if (!(upnext && _settings.RaidSettings.TotalRaidsToHost == 0))
             {
-                // Set the author (header) of the embed with the tera icon
-                embed.WithAuthor(new EmbedAuthorBuilder()
-                {
-                    Name = RaidEmbedInfoHelpers.RaidEmbedTitle,
-                    IconUrl = teraIconUrl
-                });
+                // Set the author (header) of the embed with the tera icon using localization
+                embed.WithLocalizedAuthor(RaidEmbedInfoHelpers.RaidEmbedTitle, teraIconUrl, language);
             }
 
             if (!disband && !upnext && !raidstart)
             {
-                StringBuilder statsField = new();
-                statsField.AppendLine($"**Level**: {RaidEmbedInfoHelpers.RaidLevel}");
-                statsField.AppendLine($"**Gender**: {RaidEmbedInfoHelpers.RaidSpeciesGender}");
-                statsField.AppendLine($"**Nature**: {RaidEmbedInfoHelpers.RaidSpeciesNature}");
-                statsField.AppendLine($"**Ability**: {RaidEmbedInfoHelpers.RaidSpeciesAbility}");
-                statsField.AppendLine($"**IVs**: {RaidEmbedInfoHelpers.RaidSpeciesIVs}");
-                statsField.AppendLine($"**Scale**: {RaidEmbedInfoHelpers.ScaleText}({RaidEmbedInfoHelpers.ScaleNumber})");
+                // Build localized stats field
+                string statsField = EmbedLocalizationHelper.BuildLocalizedStatsField(
+                    language,
+                    RaidEmbedInfoHelpers.RaidLevel.ToString(),
+                    RaidEmbedInfoHelpers.RaidSpeciesGender,
+                    RaidEmbedInfoHelpers.RaidSpeciesNature,
+                    RaidEmbedInfoHelpers.RaidSpeciesAbility,
+                    RaidEmbedInfoHelpers.RaidSpeciesIVs,
+                    RaidEmbedInfoHelpers.ScaleText,
+                    RaidEmbedInfoHelpers.ScaleNumber.ToString(),
+                    _settings.EmbedToggles.IncludeSeed,
+                    _settings.ActiveRaids[RotationCount].Seed,
+                    _settings.ActiveRaids[RotationCount].DifficultyLevel,
+                    (int)_settings.ActiveRaids[RotationCount].StoryProgress
+                );
 
-                if (_settings.EmbedToggles.IncludeSeed)
-                {
-                    var storyProgressValue = _settings.ActiveRaids[RotationCount].StoryProgress switch
-                    {
-                        GameProgressEnum.Unlocked6Stars => 6,
-                        GameProgressEnum.Unlocked5Stars => 5,
-                        GameProgressEnum.Unlocked4Stars => 4,
-                        GameProgressEnum.Unlocked3Stars => 3,
-                        _ => 6,
-                    };
-                    statsField.AppendLine($"**Seed**: `{_settings.ActiveRaids[RotationCount].Seed} {_settings.ActiveRaids[RotationCount].DifficultyLevel} {storyProgressValue}`");
-                }
-
-                embed.AddField("**__Stats__**", statsField.ToString(), true);
+                embed.AddLocalizedField("**__Stats__**", statsField, true, language);
                 embed.AddField("\u200b", "\u200b", true);
             }
 
             if (!disband && !upnext && !raidstart && _settings.EmbedToggles.IncludeMoves)
             {
-                embed.AddField("**__Moves__**", string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.ExtraMoves}")
+                embed.AddLocalizedField("**__Moves__**", string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.ExtraMoves}")
                     ? string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.Moves}")
-                        ? "No Moves To Display"
+                        ? EmbedLanguageManager.GetLocalizedText("No Moves To Display", language)
                         : $"{RaidEmbedInfoHelpers.Moves}"
-                    : $"{RaidEmbedInfoHelpers.Moves}\n**Extra Moves:**\n{RaidEmbedInfoHelpers.ExtraMoves}", true);
+                    : $"{RaidEmbedInfoHelpers.Moves}\n**{EmbedLanguageManager.GetLocalizedText("Extra Moves", language)}:**\n{RaidEmbedInfoHelpers.ExtraMoves}", true, language);
             }
 
             if (!disband && !upnext && !raidstart && !_settings.EmbedToggles.IncludeMoves)
             {
-                embed.AddField(" **__Special Rewards__**", string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.SpecialRewards}")
-                    ? "No Rewards To Display"
-                    : $"{RaidEmbedInfoHelpers.SpecialRewards}", true);
+                embed.AddLocalizedField("**__Special Rewards__**", string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.SpecialRewards}")
+                    ? EmbedLanguageManager.GetLocalizedText("No Rewards To Display", language)
+                    : $"{RaidEmbedInfoHelpers.SpecialRewards}", true, language);
             }
 
             // Fetch the type advantage using the static RaidSpeciesTeraType from RaidEmbedInfo
@@ -3011,15 +3048,15 @@ namespace SysBot.Pokemon.SV.BotRaid
             // Only include the Type Advantage if not posting 'upnext' embed with the 'Preparing Raid' title and if the raid isn't starting or disbanding
             if (!disband && !upnext && !raidstart && _settings.EmbedToggles.IncludeTypeAdvantage)
             {
-                embed.AddField(" **__Type Advantage__**", typeAdvantage, true);
+                embed.AddLocalizedField("**__Type Advantage__**", typeAdvantage, true, language);
                 embed.AddField("\u200b", "\u200b", true);
             }
 
             if (!disband && !upnext && !raidstart && _settings.EmbedToggles.IncludeMoves)
             {
-                embed.AddField(" **__Special Rewards__**", string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.SpecialRewards}")
-                    ? "No Rewards To Display"
-                    : $"{RaidEmbedInfoHelpers.SpecialRewards}", true);
+                embed.AddLocalizedField("**__Special Rewards__**", string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.SpecialRewards}")
+                    ? EmbedLanguageManager.GetLocalizedText("No Rewards To Display", language)
+                    : $"{RaidEmbedInfoHelpers.SpecialRewards}", true, language);
             }
 
             if (!disband && !upnext && !raidstart && _settings.ActiveRaids[RotationCount].DifficultyLevel == 7)
@@ -3028,7 +3065,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 string mechanicsInfo = GetRaidBossMechanics();
                 if (!string.IsNullOrEmpty(mechanicsInfo))
                 {
-                    embed.AddField("**__7★ Raid Mechanics__**", mechanicsInfo, false);
+                    embed.AddLocalizedField("**__7★ Raid Mechanics__**", mechanicsInfo, false, language);
                 }
             }
 
@@ -3036,21 +3073,21 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 if (code == "Free For All")
                 {
-                    embed.AddField(
-                        _settings.EmbedToggles.IncludeCountdown
-                            ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
-                            : $"**Waiting in lobby!**",
-                        $"**FREE FOR ALL**",
-                        true);
+                    string fieldName = _settings.EmbedToggles.IncludeCountdown
+                        ? $"**__{EmbedLanguageManager.GetLocalizedText("Raid Starting", language)}__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
+                        : $"**{EmbedLanguageManager.GetLocalizedText("Waiting in lobby", language)}!**";
+
+                    string fieldValue = $"**{EmbedLanguageManager.GetLocalizedText("Free For All", language)}**";
+
+                    embed.AddField(fieldName, fieldValue, true);
                 }
                 else
                 {
-                    embed.AddField(
-                        _settings.EmbedToggles.IncludeCountdown
-                            ? $"**__Raid Starting__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
-                            : $"**Waiting in lobby!**",
-                        "\u200B",
-                        true);
+                    string fieldName = _settings.EmbedToggles.IncludeCountdown
+                        ? $"**__{EmbedLanguageManager.GetLocalizedText("Raid Starting", language)}__**:\n**<t:{DateTimeOffset.Now.ToUnixTimeSeconds() + 160}:R>**"
+                        : $"**{EmbedLanguageManager.GetLocalizedText("Waiting in lobby", language)}!**";
+
+                    embed.AddField(fieldName, "\u200B", true);
                 }
             }
 
@@ -3058,22 +3095,23 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 var players = string.Empty;
                 if (names.Count == 0)
-                    players = "Our party dipped on us :/";
+                    players = EmbedLanguageManager.GetLocalizedText("Our party dipped on us :/", language);
                 else
                 {
                     // Add host as Player 1
-                    players += $"Player 1 (Host) - **{_hostSAV.OT}**\n";
+                    players += $"{EmbedLanguageManager.GetLocalizedText("Player", language)} 1 ({EmbedLanguageManager.GetLocalizedText("Host", language)}) - **{_hostSAV.OT}**\n";
 
                     // Add other players starting at Player 2
                     int i = 2;
                     names.ForEach(x =>
                     {
-                        players += $"Player {i} - **{x}**\n";
+                        players += $"{EmbedLanguageManager.GetLocalizedText("Player", language)} {i} - **{x}**\n";
                         i++;
                     });
                 }
 
-                embed.AddField($"**Raid #{_raidCount} is starting!**", players);
+                string fieldName = $"**{EmbedLanguageManager.GetLocalizedText("Raid", language)} #{_raidCount} {EmbedLanguageManager.GetLocalizedText("is starting", language)}!**";
+                embed.AddField(fieldName, players);
             }
 
             if (imageBytes != null)
@@ -3086,9 +3124,12 @@ namespace SysBot.Pokemon.SV.BotRaid
             if (!disband && names is null && !upnext && !raidstart && code != "Free For All")
             {
                 // Add a field with code information
-                embed.AddField("**__Raid Code__**",
-                    "React with ✅ to receive the raid code via DM.\n" +
-                    "The code will be sent to you privately.", false);
+                string fieldName = $"**__{EmbedLanguageManager.GetLocalizedText("Raid Code", language)}__**";
+                string fieldValue = $"{EmbedLanguageManager.GetLocalizedText("React with", language)} ✅ " +
+                                  $"{EmbedLanguageManager.GetLocalizedText("to receive the raid code via DM", language)}.\n" +
+                                  $"{EmbedLanguageManager.GetLocalizedText("The code will be sent to you privately", language)}.";
+
+                embed.AddField(fieldName, fieldValue, false);
             }
 
             // Send the embed to all channels and get list of sent messages
