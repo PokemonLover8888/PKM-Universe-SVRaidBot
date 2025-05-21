@@ -344,31 +344,31 @@ namespace SysBot.Pokemon
             public enum LanguageOptions
             {
                 [Description("Japanese")]
-                Japanese = 0,
+                Japanese = 1,
 
                 [Description("English")]
-                English = 1,
+                English = 2,
 
                 [Description("French")]
-                French = 2,
+                French = 3,
 
                 [Description("Italian")]
-                Italian = 3,
+                Italian = 4,
 
                 [Description("German")]
-                German = 4,
+                German = 5,
 
                 [Description("Spanish")]
-                Spanish = 5,
+                Spanish = 7,
 
                 [Description("Korean")]
-                Korean = 6,
+                Korean = 8,
 
                 [Description("Chinese (Simplified)")]
-                ChineseS = 7,
+                ChineseS = 9,
 
                 [Description("Chinese (Traditional)")]
-                ChineseT = 8
+                ChineseT = 10
             }
 
             [Category(Hosting), Description("The full string for the male gender emoji. Leave blank to not use.")]

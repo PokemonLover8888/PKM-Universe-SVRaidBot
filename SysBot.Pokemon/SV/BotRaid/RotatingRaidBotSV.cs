@@ -219,7 +219,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 (PK9 pk, Embed embed) = RaidInfoCommand(
                     seedValue, contentType, map, (int)gameProgress, raidDeliveryGroupID,
                     _settings.EmbedToggles.RewardsToShow, _settings.EmbedToggles.MoveTypeEmojis,
-                    _settings.EmbedToggles.CustomTypeEmojis, 0, false
+                    _settings.EmbedToggles.CustomTypeEmojis, 0, false, (int)_settings.EmbedToggles.EmbedLanguage
                 );
 
                 // Get the Tera type from the embed
@@ -1618,7 +1618,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             (PK9 pk, Embed embed) = RaidInfoCommand(
                 seedValue, contentType, map, (int)gameProgress, raidDeliveryGroupID,
                 emptyRewardsToShow, defaultMoveTypeEmojis, emptyCustomTypeEmojis,
-                defaultQueuePosition, defaultIsEvent
+                defaultQueuePosition, defaultIsEvent, (int)_settings.EmbedToggles.EmbedLanguage
             );
 
             string teraType = ExtractTeraTypeFromEmbed(embed);
@@ -2694,11 +2694,34 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// </summary>
         private string GetTypeAdvantage(string teraType)
         {
-            if (_typeAdvantages.TryGetValue(teraType.ToLower(), out string advantage))
+            string englishTypeName = GetEnglishTypeNameFromLocalized(teraType);
+
+            if (_typeAdvantages.TryGetValue(englishTypeName.ToLower(), out string advantage))
             {
                 return advantage;
             }
             return "Unknown Type";
+        }
+
+        /// <summary>
+        /// Maps localized type names to English type names for consistent lookup
+        /// </summary>
+        private string GetEnglishTypeNameFromLocalized(string teraType)
+        {
+            if (_typeAdvantages.ContainsKey(teraType.ToLower()))
+                return teraType.ToLower();
+            var englishStrings = GameInfo.GetStrings(2);
+            var localizedStrings = GameInfo.GetStrings((int)_settings.EmbedToggles.EmbedLanguage);
+            for (int i = 0; i < localizedStrings.Types.Count; i++)
+            {
+                if (string.Equals(teraType, localizedStrings.Types[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    return englishStrings.Types[i].ToLower();
+                }
+            }
+
+            // If not found, return the original (it might still work if close enough)
+            return teraType.ToLower();
         }
 
         /// <summary>
@@ -2923,9 +2946,10 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
 
             // Prepare the tera icon URL
-            string teraType = RaidEmbedInfoHelpers.RaidSpeciesTeraType.ToLower();
-            string folderName = _settings.EmbedToggles.SelectedTeraIconType == TeraIconType.Icon1 ? "icon1" : "icon2"; // Add more conditions for more icon types
-            string teraIconUrl = $"https://raw.githubusercontent.com/bdawg1989/sprites/main/teraicons/{folderName}/{teraType}.png";
+            string teraType = RaidEmbedInfoHelpers.RaidSpeciesTeraType;
+            string englishTeraType = GetEnglishTypeNameFromLocalized(teraType).ToLower();
+            string folderName = _settings.EmbedToggles.SelectedTeraIconType == TeraIconType.Icon1 ? "icon1" : "icon2";
+            string teraIconUrl = $"https://raw.githubusercontent.com/bdawg1989/sprites/main/teraicons/{folderName}/{englishTeraType}.png";
 
             // Only include author (header) if not posting 'upnext' embed with the 'Preparing Raid' title
             if (!(upnext && _settings.RaidSettings.TotalRaidsToHost == 0))
@@ -3162,14 +3186,17 @@ namespace SysBot.Pokemon.SV.BotRaid
             bool isEvent = currentRaid.CrystalType == TeraCrystalType.Distribution ||
                           currentRaid.CrystalType == TeraCrystalType.Might;
 
-            Log($"Generating raid info with parameters: Seed={seedValue}, ContentType={contentType}, Map={map}, " +
-                $"StoryProgress={storyProgressLevel}, GroupID={raidDeliveryGroupID}, IsEvent={isEvent}, CrystalType={currentRaid.CrystalType}");
+            // Get the selected language ID
+            int languageId = (int)_settings.EmbedToggles.EmbedLanguage;
 
-            // Generate accurate raid data using RaidInfoCommand
+            Log($"Generating raid info with parameters: Seed={seedValue}, ContentType={contentType}, Map={map}, " +
+                $"StoryProgress={storyProgressLevel}, GroupID={raidDeliveryGroupID}, IsEvent={isEvent}, CrystalType={currentRaid.CrystalType}, Language={languageId}");
+
+            // Generate accurate raid data using RaidInfoCommand, passing the language ID
             (PK9 pk, Embed embed) = RaidInfoCommand(
                 seedValue, contentType, map, storyProgressLevel, raidDeliveryGroupID,
                 _settings.EmbedToggles.RewardsToShow, _settings.EmbedToggles.MoveTypeEmojis,
-                _settings.EmbedToggles.CustomTypeEmojis, 0, isEvent
+                _settings.EmbedToggles.CustomTypeEmojis, 0, isEvent, languageId
             );
 
             // Populate RaidEmbedInfoHelpers with data from the generated embed and PK9
@@ -3384,19 +3411,19 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
 
             var raidInfo = new
             {
-                RaidEmbedTitle = CleanEmojiStrings(RaidEmbedInfoHelpers.RaidEmbedTitle),
+                RaidEmbedTitle = CleanEmojiStrings(RaidEmbedEnglishHelpers.RaidEmbedTitle),
                 RaidSpecies = RaidEmbedInfoHelpers.RaidSpecies.ToString(),
                 RaidEmbedInfoHelpers.RaidSpeciesForm,
-                RaidSpeciesGender = CleanEmojiStrings(RaidEmbedInfoHelpers.RaidSpeciesGender),
+                RaidSpeciesGender = CleanEmojiStrings(RaidEmbedEnglishHelpers.RaidSpeciesGender),
                 RaidEmbedInfoHelpers.RaidLevel,
                 RaidEmbedInfoHelpers.RaidSpeciesIVs,
-                RaidEmbedInfoHelpers.RaidSpeciesAbility,
-                RaidEmbedInfoHelpers.RaidSpeciesNature,
-                RaidEmbedInfoHelpers.RaidSpeciesTeraType,
-                Moves = CleanEmojiStrings(RaidEmbedInfoHelpers.Moves),
-                ExtraMoves = CleanEmojiStrings(RaidEmbedInfoHelpers.ExtraMoves),
-                RaidEmbedInfoHelpers.ScaleText,
-                SpecialRewards = CleanEmojiStrings(RaidEmbedInfoHelpers.SpecialRewards),
+                RaidEmbedEnglishHelpers.RaidSpeciesAbility,
+                RaidEmbedEnglishHelpers.RaidSpeciesNature,
+                RaidEmbedEnglishHelpers.RaidSpeciesTeraType,
+                Moves = CleanEmojiStrings(RaidEmbedEnglishHelpers.Moves),
+                ExtraMoves = CleanEmojiStrings(RaidEmbedEnglishHelpers.ExtraMoves),
+                RaidEmbedEnglishHelpers.ScaleText,
+                SpecialRewards = CleanEmojiStrings(RaidEmbedEnglishHelpers.SpecialRewards),
                 RaidEmbedInfoHelpers.ScaleNumber,
                 Names = names,
                 Code_encrypted = encryptedCode,
@@ -4416,7 +4443,9 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         /// <summary>
         /// Creates raid info for API command
         /// </summary>
-        public static (PK9, Embed) RaidInfoCommand(string seedValue, int contentType, TeraRaidMapParent map, int storyProgressLevel, int raidDeliveryGroupID, List<string> rewardsToShow, bool moveTypeEmojis, List<MoveTypeEmojiInfo> customTypeEmojis, int queuePosition = 0, bool isEvent = false)
+        public static (PK9, Embed) RaidInfoCommand(string seedValue, int contentType, TeraRaidMapParent map, int storyProgressLevel,
+            int raidDeliveryGroupID, List<string> rewardsToShow, bool moveTypeEmojis, List<MoveTypeEmojiInfo> customTypeEmojis,
+            int queuePosition = 0, bool isEvent = false, int languageId = 1)
         {
             if (Container == null)
             {
@@ -4462,8 +4491,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             var level = encounter.Level;
             var pk = RaidPokemonGenerator.GenerateRaidPokemon(encounter, raid.Seed, raid.IsShiny, teraType, level);
 
-            // Create the embed
-            var strings = GameInfo.GetStrings("en");
+            // Get strings in the selected language
+            var strings = GameInfo.GetStrings(languageId);
             var useTypeEmojis = moveTypeEmojis;
             var typeEmojis = customTypeEmojis
                 .Where(e => !string.IsNullOrEmpty(e.EmojiCode))
@@ -4496,11 +4525,11 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             }
 
             // Process extra moves
+            var extraMovesList = new StringBuilder();
+            bool hasExtraMoves = false;
+
             if (encounter.ExtraMoves.Length > 0)
             {
-                var extraMovesList = new StringBuilder();
-                bool hasExtraMoves = false;
-
                 foreach (var moveId in encounter.ExtraMoves)
                 {
                     if (moveId != 0)
@@ -4517,25 +4546,17 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                         hasExtraMoves = true;
                     }
                 }
+            }
 
-                if (hasExtraMoves)
-                {
-                    movesList.AppendLine($"**Extra Moves:**");
-                    movesList.Append(extraMovesList);
-                    hasMoves = true;
-                }
+            // Build final moves string
+            string finalMoves = movesList.ToString();
+            if (hasExtraMoves)
+            {
+                finalMoves += $"**Extra Moves:**\n{extraMovesList}";
             }
 
             // Process rewards
-            string specialRewards;
-            try
-            {
-                specialRewards = GetSpecialRewards(reward, rewardsToShow);
-            }
-            catch
-            {
-                specialRewards = "No valid rewards to display";
-            }
+            string specialRewards = GetSpecialRewards(reward, rewardsToShow, languageId);
 
             // Build the embed
             var teraTypeLower = strings.Types[teraType].ToLower();
@@ -4543,7 +4564,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             var disclaimer = $"Current Position: {queuePosition}";
             var titlePrefix = raid.IsShiny ? "Shiny " : "";
             var formName = ShowdownParsing.GetStringFromForm(pk.Form, strings, pk.Species, pk.Context);
-            var authorName = $"{stars} ★ {titlePrefix}{(Species)encounter.Species}{(pk.Form != 0 ? $"-{formName}" : "")}{(isEvent ? " (Event Raid)" : "")}";
+            var authorName = $"{stars} ★ {titlePrefix}{strings.Species[encounter.Species]}{(pk.Form != 0 ? $"-{formName}" : "")}{(isEvent ? " (Event Raid)" : "")}";
 
             (int R, int G, int B) = Task.Run(() => RaidExtensions<PK9>.GetDominantColorAsync(RaidExtensions<PK9>.PokeImg(pk, false, false))).Result;
             var embedColor = new Color(R, G, B);
@@ -4559,7 +4580,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 x.Value = $"{Format.Bold($"TeraType:")} {strings.Types[teraType]} \n" +
                           $"{Format.Bold($"Level:")} {level}\n" +
                           $"{Format.Bold($"Ability:")} {strings.Ability[pk.Ability]}\n" +
-                          $"{Format.Bold("Nature:")} {(Nature)pk.Nature}\n" +
+                          $"{Format.Bold("Nature:")} {strings.Natures[(int)pk.Nature]}\n" +
                           $"{Format.Bold("IVs:")} {pk.IV_HP}/{pk.IV_ATK}/{pk.IV_DEF}/{pk.IV_SPA}/{pk.IV_SPD}/{pk.IV_SPE}\n" +
                           $"{Format.Bold($"Scale:")} {PokeSizeDetailedUtil.GetSizeRating(pk.Scale)}";
                 x.IsInline = true;
@@ -4572,6 +4593,11 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             else
             {
                 embed.AddField("**__Moves__**", "No moves available", true);
+            }
+
+            if (hasExtraMoves)
+            {
+                embed.AddField("**__Extra Moves__**", extraMovesList.ToString(), true);
             }
 
             if (!string.IsNullOrEmpty(specialRewards))
@@ -4595,6 +4621,46 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 auth.Name = authorName;
                 auth.IconUrl = teraIconUrl;
             });
+            var englishStrings = GameInfo.GetStrings(2);
+            var englishMovesList = new StringBuilder();
+            var englishExtraMovesList = new StringBuilder();
+            for (int i = 0; i < 4; i++)
+            {
+                int moveId = i switch { 0 => pk.Move1, 1 => pk.Move2, 2 => pk.Move3, 3 => pk.Move4, _ => 0 };
+                if (moveId != 0)
+                {
+                    string englishMoveName = englishStrings.Move[moveId];
+                    englishMovesList.AppendLine($"- {englishMoveName}");
+                }
+            }
+            if (encounter.ExtraMoves.Length > 0)
+            {
+                foreach (var moveId in encounter.ExtraMoves)
+                {
+                    if (moveId != 0)
+                    {
+                        string englishMoveName = englishStrings.Move[moveId];
+                        englishExtraMovesList.AppendLine($"- {englishMoveName}");
+                    }
+                }
+            }
+            string englishFinalMoves = englishMovesList.ToString();
+            if (englishExtraMovesList.Length > 0)
+            {
+                englishFinalMoves += $"Extra Moves:\n{englishExtraMovesList}";
+            }
+            string englishSpecialRewards = GetSpecialRewards(reward, rewardsToShow, 2);
+            string englishFormName = ShowdownParsing.GetStringFromForm(pk.Form, englishStrings, pk.Species, pk.Context);
+            string englishAuthorName = $"{stars} ★ {titlePrefix}{englishStrings.Species[encounter.Species]}{(pk.Form != 0 ? $"-{englishFormName}" : "")}{(isEvent ? " (Event Raid)" : "")}";
+            RaidEmbedEnglishHelpers.RaidEmbedTitle = englishAuthorName;
+            RaidEmbedEnglishHelpers.RaidSpeciesGender = pk.Gender == 0 ? "Male" : (pk.Gender == 1 ? "Female" : "Genderless");
+            RaidEmbedEnglishHelpers.RaidSpeciesAbility = englishStrings.Ability[pk.Ability];
+            RaidEmbedEnglishHelpers.RaidSpeciesNature = englishStrings.Natures[(int)pk.Nature];
+            RaidEmbedEnglishHelpers.RaidSpeciesTeraType = englishStrings.Types[teraType];
+            RaidEmbedEnglishHelpers.Moves = englishMovesList.ToString().TrimEnd();
+            RaidEmbedEnglishHelpers.ExtraMoves = englishExtraMovesList.ToString().TrimEnd();
+            RaidEmbedEnglishHelpers.ScaleText = PokeSizeDetailedUtil.GetSizeRating(pk.Scale).ToString();
+            RaidEmbedEnglishHelpers.SpecialRewards = englishSpecialRewards;
 
             return (pk, embed.Build());
         }
