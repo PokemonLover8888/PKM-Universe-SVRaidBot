@@ -3141,7 +3141,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 TeraCrystalType.Base => 0,    // Base crystal = regular raid
                 TeraCrystalType.Black => 1,   // Black crystal = 1
                 TeraCrystalType.Distribution => 2, // Distribution = 2
-                TeraCrystalType.Might => 1,   // Might events use contentType 1
+                TeraCrystalType.Might => 3,   // Might = 3
                 _ => 0,
             };
 
@@ -3213,7 +3213,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                     if (mechanicsInfo.ExtraActions.Count > 0)
                     {
                         mechanics.AppendLine("**Other Actions:**");
-                        var moveNames = GameInfo.GetStrings(1).Move;
+                        var moveNames = GameInfo.GetStrings("en").Move;
 
                         foreach (var (action, timing, value, moveId) in mechanicsInfo.ExtraActions)
                         {
@@ -4463,7 +4463,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             var pk = RaidPokemonGenerator.GenerateRaidPokemon(encounter, raid.Seed, raid.IsShiny, teraType, level);
 
             // Create the embed
-            var strings = GameInfo.GetStrings(1);
+            var strings = GameInfo.GetStrings("en");
             var useTypeEmojis = moveTypeEmojis;
             var typeEmojis = customTypeEmojis
                 .Where(e => !string.IsNullOrEmpty(e.EmojiCode))

@@ -309,6 +309,10 @@ namespace SysBot.Pokemon
         {
             public override string ToString() => "Embed Toggles";
 
+            [Category(Hosting), Description("Select the language for raid embeds. This will translate Pokemon names, types, abilities, etc.")]
+            [DisplayName("Embed Language")]
+            public LanguageOptions EmbedLanguage { get; set; } = LanguageOptions.English;
+
             [Category(Hosting), Description("Will show Move Type Icons next to moves in trade embed (Discord only).  Requires user to upload the emojis to their server.")]
             [DisplayName("Use Move Type Emoji's?")]
             public bool MoveTypeEmojis { get; set; } = true;
@@ -336,6 +340,36 @@ namespace SysBot.Pokemon
             new(MoveType.Poison),
             new(MoveType.Fairy),
             ];
+
+            public enum LanguageOptions
+            {
+                [Description("Japanese")]
+                Japanese = 0,
+
+                [Description("English")]
+                English = 1,
+
+                [Description("French")]
+                French = 2,
+
+                [Description("Italian")]
+                Italian = 3,
+
+                [Description("German")]
+                German = 4,
+
+                [Description("Spanish")]
+                Spanish = 5,
+
+                [Description("Korean")]
+                Korean = 6,
+
+                [Description("Chinese (Simplified)")]
+                ChineseS = 7,
+
+                [Description("Chinese (Traditional)")]
+                ChineseT = 8
+            }
 
             [Category(Hosting), Description("The full string for the male gender emoji. Leave blank to not use.")]
             [DisplayName("Male Emoji Code")]
@@ -579,7 +613,7 @@ namespace SysBot.Pokemon
 
             [Category(FeatureToggle), Description("Delay for the 'MashA' action in seconds.  [3.5 is default]")]
             [DisplayName("A Button Delay (Seconds)")]
-            public double MashADelay { get; set; } = 3.5;  // Default value set to 3.5 seconds
+            public double MashADelay { get; set; } = 1.0;  // Default value set to 1.0 seconds
 
             [Category(FeatureToggle), Description("Extra time in milliseconds to wait after Lobby Disbands in Raid before deciding to not capture the raidmon.")]
             [DisplayName("Extra Time To Disband Raid")]
