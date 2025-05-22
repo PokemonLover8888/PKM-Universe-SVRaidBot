@@ -607,11 +607,11 @@ namespace SysBot.Pokemon
                 _raidLimit = Math.Max(1, Math.Min(3, value));
             }
 
-            [Category(FeatureToggle), Description("Set the action you would want your bot to perform. 'AFK' will make the bot idle, while 'MashA' presses A every 3.5s")]
+            [Category(FeatureToggle), Description("Set the action you would want your bot to perform. 'AFK' will make the bot idle, while 'MashA' presses A every 1s")]
             [DisplayName("A Button Action")]
             public RaidAction Action { get; set; } = RaidAction.MashA;
 
-            [Category(FeatureToggle), Description("Delay for the 'MashA' action in seconds.  [3.5 is default]")]
+            [Category(FeatureToggle), Description("Delay for the 'MashA' action in seconds.  [1.0 is default]")]
             [DisplayName("A Button Delay (Seconds)")]
             public double MashADelay { get; set; } = 1.0;  // Default value set to 1.0 seconds
 
