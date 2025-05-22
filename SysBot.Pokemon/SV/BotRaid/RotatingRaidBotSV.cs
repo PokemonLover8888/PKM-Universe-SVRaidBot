@@ -766,56 +766,55 @@ namespace SysBot.Pokemon.SV.BotRaid
         }
 
         /// <summary>
-        /// Locates an empty raid den where seeds can be injected
+        /// Locates the nearest active den to the player for seed injection
         /// </summary>
         private async Task LocateSeedIndex(CancellationToken token)
         {
-            const int kitakamiDensCount = 25;
-            int upperBound = kitakamiDensCount == 25 ? 94 : 95;
-            int startIndex = kitakamiDensCount == 25 ? 94 : 95;
-
-            // Check Paldea raids
-            var data = await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerP, 2304, token).ConfigureAwait(false);
-            for (int i = 0; i < 69; i++)
+            try
             {
-                var seed = BitConverter.ToUInt32(data.AsSpan(0x20 + i * 0x20, 4));
-                if (seed == 0)
+                var playerLocation = await GetPlayersLocation(token);
+                var currentRegion = await DetectCurrentRegion(token);
+
+                Log($"Player location: ({playerLocation.Item1:F2}, {playerLocation.Item2:F2}, {playerLocation.Item3:F2})");
+                Log($"Current region: {currentRegion}");
+
+                // Get all ACTIVE raid locations (only dens that are actually visible/active in the game)
+                var activeRaids = await GetActiveRaidLocations(currentRegion, token);
+
+                if (activeRaids.Count == 0)
                 {
-                    _seedIndexToReplace = i;
-                    Log($"Raid Den Located at {i} in Paldea.");
+                    Log("No active dens found in the current region.");
+                    _seedIndexToReplace = -1;
                     return;
                 }
-            }
 
-            // Check Kitakami raids
-            data = await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerK + 0x10, 0xC80, token).ConfigureAwait(false);
-            for (int i = 69; i < upperBound; i++)
+                Log($"Found {activeRaids.Count} active dens in {currentRegion}");
+
+                // Find the nearest active den to the player's current location
+                var nearestActiveDen = activeRaids
+                    .Select(raid => new
+                    {
+                        Raid = raid,
+                        Distance = CalculateDistance(playerLocation, (raid.Coordinates[0], raid.Coordinates[1], raid.Coordinates[2]))
+                    })
+                    .OrderBy(x => x.Distance)
+                    .First();
+
+                _seedIndexToReplace = nearestActiveDen.Raid.Index;
+
+                Log($"Nearest active den: {nearestActiveDen.Raid.DenIdentifier} at index {_seedIndexToReplace} (distance: {nearestActiveDen.Distance:F2})");
+                Log($"Current seed at that location: {nearestActiveDen.Raid.Seed:X8}");
+                Log($"Target den selected - will teleport during next seed injection phase");
+
+                // Update region flags based on the current region
+                IsKitakami = currentRegion == TeraRaidMapParent.Kitakami;
+                IsBlueberry = currentRegion == TeraRaidMapParent.Blueberry;
+            }
+            catch (Exception ex)
             {
-                var seed = BitConverter.ToUInt32(data.AsSpan((i - 69) * 0x20, 4));
-                if (seed == 0)
-                {
-                    _seedIndexToReplace = i;
-                    Log($"Raid Den Located at {i} in Kitakami.");
-                    IsKitakami = true;
-                    return;
-                }
+                Log($"Error in LocateSeedIndex: {ex.Message}");
+                _seedIndexToReplace = -1;
             }
-
-            // Check Blueberry raids
-            data = await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerB + 0x10, 0xA00, token).ConfigureAwait(false);
-            for (int i = startIndex; i < 118; i++)
-            {
-                var seed = BitConverter.ToUInt32(data.AsSpan((i - startIndex) * 0x20, 4));
-                if (seed == 0)
-                {
-                    _seedIndexToReplace = i - 1;
-                    Log($"Raid Den Located at {i} in Blueberry.");
-                    IsBlueberry = true;
-                    return;
-                }
-            }
-
-            Log("Index not located.");
         }
 
         /// <summary>
@@ -1483,7 +1482,8 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                 _seedIndexToReplace = index;
                 Log($"Successfully injected seed {seed:X8} at index {index}");
-                await LogPlayerLocation(token);
+
+                await TeleportToInjectedDenLocation(index, crystalType, speciesName, groupID, denIdentifier, token);
 
                 return true;
             }
@@ -1491,6 +1491,54 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 Log($"Error in OverrideSeedIndex: {ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Teleports to the den location where we injected the seed 
+        /// </summary>
+        private async Task TeleportToInjectedDenLocation(int index, TeraCrystalType crystalType, string speciesName, int? groupID, string? denIdentifier, CancellationToken token)
+        {
+            try
+            {
+                // Get the appropriate location resource based on the current region
+                string denLocationResource = IsKitakami
+                    ? "SysBot.Pokemon.SV.BotRaid.DenLocations.den_locations_kitakami.json"
+                    : IsBlueberry
+                        ? "SysBot.Pokemon.SV.BotRaid.DenLocations.den_locations_blueberry.json"
+                        : "SysBot.Pokemon.SV.BotRaid.DenLocations.den_locations_base.json";
+
+                var denLocations = LoadDenLocations(denLocationResource);
+
+                // For event raids, use the specific den identifier
+                if (crystalType == TeraCrystalType.Might || crystalType == TeraCrystalType.Distribution)
+                {
+                    if (denIdentifier != null && denLocations.TryGetValue(denIdentifier, out var eventCoordinates))
+                    {
+                        await TeleportToDen(eventCoordinates[0], eventCoordinates[1], eventCoordinates[2], token);
+                        Log($"Successfully teleported to event den: {denIdentifier}");
+                        return;
+                    }
+                }
+
+                // For regular raids, find the den location by matching the index with active raid data
+                var currentRegion = await DetectCurrentRegion(token);
+                var activeRaids = await GetActiveRaidLocations(currentRegion, token);
+
+                var targetRaid = activeRaids.FirstOrDefault(raid => raid.Index == index);
+                if (targetRaid.DenIdentifier != null)
+                {
+                    await TeleportToDen(targetRaid.Coordinates[0], targetRaid.Coordinates[1], targetRaid.Coordinates[2], token);
+                    Log($"Successfully teleported to den: {targetRaid.DenIdentifier} at index {index}");
+                }
+                else
+                {
+                    Log($"Could not find coordinates for den at index {index}. No teleportation performed.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error during teleportation: {ex.Message}");
             }
         }
 
