@@ -178,7 +178,7 @@
     "React with": {
         "en": "React with",
         "ja": "反応する",
-        "fr": "Réagissez avec",
+        "fr": "Réagis avec",
         "es": "Reacciona con",
         "de": "Reagiere mit",
         "it": "Reagisci con",
@@ -200,7 +200,7 @@
     "The code will be sent to you privately": {
         "en": "The code will be sent to you privately",
         "ja": "コードは個人的に送信されます",
-        "fr": "Le code vous sera envoyé en privé",
+        "fr": "Le code te sera envoyé en privé",
         "es": "El código se te enviará en privado",
         "de": "Der Code wird dir privat zugesendet",
         "it": "Il codice ti verrà inviato privatamente",
@@ -233,7 +233,7 @@
     "Uptime": {
         "en": "Uptime",
         "ja": "稼働時間",
-        "fr": "Temps de fonctionnement",
+        "fr": "En ligne depuis",
         "es": "Tiempo de actividad",
         "de": "Betriebszeit",
         "it": "Tempo di attività",
@@ -378,7 +378,7 @@
     "Mystery Shiny Raid": {
         "en": "Mystery Shiny Raid",
         "ja": "ミステリー色違いレイド",
-        "fr": "Raid chromatique mystère",
+        "fr": "Raid Chromatique Mystère",
         "es": "Incursión variocolor misteriosa",
         "de": "Mysteriöser Schillernder Raid",
         "it": "Incursione cromatica misteriosa",
