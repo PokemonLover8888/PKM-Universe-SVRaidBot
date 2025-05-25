@@ -200,31 +200,121 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// <summary>
         /// Inserts default shiny raids when no active raids are configured
         /// </summary>
-        private Task InsertDefaultShinyRaids(CancellationToken token)
+        private async Task InsertDefaultShinyRaids(CancellationToken token)
         {
+            // Ensure Container is properly initialized before proceeding
+            if (Container == null)
+            {
+                Log("Container is null, attempting to initialize raid data...");
+                try
+                {
+                    await ReadRaids(token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log($"Failed to initialize raid data: {ex.Message}");
+                    return;
+                }
+            }
+
+            // Use current game state instead of hardcoded values
+            var currentGameProgress = GameProgress != GameProgress.None ? GameProgress : GameProgress.Unlocked5Stars;
+            var currentRegion = await DetectCurrentRegion(token);
+
+            Log($"Creating default shiny raids with game progress: {currentGameProgress}, region: {currentRegion}");
+
             // Generate two random shiny raids
             for (int i = 0; i < 2; i++)
             {
                 uint randomSeed = GenerateRandomShinySeed();
                 string seedValue = randomSeed.ToString("X8");
 
-                // Default to 5-star raids with unlocked 5-stars progress
-                GameProgress gameProgress = GameProgress.Unlocked5Stars;
-                int difficultyLevel = 5;
-                var crystalType = TeraCrystalType.Base;
-                TeraRaidMapParent map = TeraRaidMapParent.Paldea;
-                int contentType = 0; // Regular raid
+                // Use current game state for parameters
+                int difficultyLevel = currentGameProgress switch
+                {
+                    GameProgress.Unlocked6Stars => 5, // Use 5-star for reliability
+                    GameProgress.Unlocked5Stars => 5,
+                    GameProgress.Unlocked4Stars => 4,
+                    GameProgress.Unlocked3Stars => 3,
+                    _ => 3 // Default to 3-star if unknown
+                };
+
+                var crystalType = difficultyLevel == 6 ? TeraCrystalType.Black : TeraCrystalType.Base;
+                int contentType = difficultyLevel == 6 ? 1 : 0; // Black crystal raids use contentType 1
                 int raidDeliveryGroupID = 0;
 
-                // Use RaidInfoCommand to get the PK9 details
-                (PK9 pk, Embed embed) = RaidInfoCommand(
-                    seedValue, contentType, map, (int)gameProgress, raidDeliveryGroupID,
-                    _settings.EmbedToggles.RewardsToShow, _settings.EmbedToggles.MoveTypeEmojis,
-                    _settings.EmbedToggles.CustomTypeEmojis, 0, false, (int)_settings.EmbedToggles.EmbedLanguage
-                );
+                // Retry logic for RaidInfoCommand in case of initial failures
+                PK9? pk = null;
+                Embed? embed = null;
+                int retryCount = 0;
+                const int maxRetries = 3;
 
-                // Get the Tera type from the embed
-                string teraType = ExtractTeraTypeFromEmbed(embed);
+                while (retryCount < maxRetries && pk == null)
+                {
+                    try
+                    {
+                        var result = RaidInfoCommand(
+                            seedValue,
+                            contentType,
+                            currentRegion,
+                            (int)currentGameProgress + 1, // RaidInfoCommand expects 1-based progress
+                            raidDeliveryGroupID,
+                            _settings.EmbedToggles.RewardsToShow,
+                            _settings.EmbedToggles.MoveTypeEmojis,
+                            _settings.EmbedToggles.CustomTypeEmojis,
+                            0,
+                            false,
+                            (int)_settings.EmbedToggles.EmbedLanguage
+                        );
+
+                        pk = result.Item1;
+                        embed = result.Item2;
+
+                        // Validate that we got a valid Pokemon (not Species.None)
+                        if (pk.Species == 0)
+                        {
+                            Log($"RaidInfoCommand returned invalid species (0) for seed {seedValue}, attempt {retryCount + 1}");
+                            pk = null;
+                            retryCount++;
+
+                            if (retryCount < maxRetries)
+                            {
+                                // Try a different seed
+                                randomSeed = GenerateRandomShinySeed();
+                                seedValue = randomSeed.ToString("X8");
+                                await Task.Delay(500, token); // Small delay before retry
+                            }
+                        }
+                        else
+                        {
+                            Log($"Successfully generated raid data - Species: {(Species)pk.Species}, Seed: {seedValue}");
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Error in RaidInfoCommand attempt {retryCount + 1}: {ex.Message}");
+                        retryCount++;
+
+                        if (retryCount < maxRetries)
+                        {
+                            // Try a different seed
+                            randomSeed = GenerateRandomShinySeed();
+                            seedValue = randomSeed.ToString("X8");
+                            await Task.Delay(1000, token); // Delay before retry
+                        }
+                    }
+                }
+
+                // If we still don't have valid data after retries, skip this raid
+                if (pk == null || pk.Species == 0)
+                {
+                    Log($"Failed to generate valid raid data after {maxRetries} attempts, skipping raid {i + 1}");
+                    continue;
+                }
+
+                // Get the Tera type from the embed for battler selection
+                string teraType = embed != null ? ExtractTeraTypeFromEmbed(embed) : "Fairy";
                 string[] battlers = GetBattlerForTeraType(teraType);
 
                 // If no specific battler is configured for this Tera type, use a default one
@@ -241,21 +331,21 @@ namespace SysBot.Pokemon.SV.BotRaid
                     SpeciesForm = pk.Form,
                     Title = $"Shiny {(Species)pk.Species}",
                     DifficultyLevel = difficultyLevel,
-                    StoryProgress = (GameProgressEnum)gameProgress,
+                    StoryProgress = (GameProgressEnum)currentGameProgress,
                     CrystalType = crystalType,
                     IsShiny = true,
                     PartyPK = battlers,
                     ActiveInRotation = true,
                     Action1 = Action1Type.GoAllOut,
-                    Action1Delay = 5 // 5-second delay before action
+                    Action1Delay = 5
                 };
 
                 _settings.ActiveRaids.Add(newShinyRaid);
-                Log($"Added Default Shiny Raid - Species: {(Species)pk.Species}, Seed: {seedValue}");
+                Log($"Added Default Shiny Raid - Species: {(Species)pk.Species}, Form: {pk.Form}, Seed: {seedValue}, Difficulty: {difficultyLevel}★");
             }
 
-            Log("Two default shiny raids have been added. Bot will continue operating normally.");
-            return Task.CompletedTask;
+            int successfulRaids = _settings.ActiveRaids.Count(r => r.Title.StartsWith("Shiny"));
+            Log($"{successfulRaids} default shiny raids have been added. Bot will continue operating normally.");
         }
 
         /// <summary>
@@ -712,6 +802,9 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// </summary>
         private async Task HandleEmptyLobby(CancellationToken token)
         {
+            _emptyRaid++;
+            _lostRaid++;
+
             // Mark embed as inactive since nobody joined
             await SharedRaidCodeHandler.UpdateReactionsOnAllMessages(false, token);
 
@@ -1160,9 +1253,24 @@ namespace SysBot.Pokemon.SV.BotRaid
                 }
             }
 
-                await CountRaids(trainers, token).ConfigureAwait(false);
+            await CountRaids(trainers, token).ConfigureAwait(false);
 
-            // Update RotationCount after locating seed index
+            // Remove completed RA command raids BEFORE advancing rotation
+            if (_settings.ActiveRaids[RotationCount].AddedByRACommand)
+            {
+                bool isMysteryRaid = _settings.ActiveRaids[RotationCount].Title.Contains("Mystery Shiny Raid");
+                bool isUserRequestedRaid = !isMysteryRaid && _settings.ActiveRaids[RotationCount].Title.Contains("'s Requested Raid");
+
+                if (isUserRequestedRaid || isMysteryRaid)
+                {
+                    Log($"Raid for {_settings.ActiveRaids[RotationCount].Species} was completed and will be removed from the rotation list.");
+                    _settings.ActiveRaids.RemoveAt(RotationCount);
+                    // Adjust RotationCount if needed after removal
+                    if (RotationCount >= _settings.ActiveRaids.Count)
+                        RotationCount = 0;
+                }
+            }
+
             if (_settings.ActiveRaids.Count > 1)
             {
                 await SanitizeRotationCount(token).ConfigureAwait(false);
@@ -1734,23 +1842,6 @@ namespace SysBot.Pokemon.SV.BotRaid
                 for (int i = 0; i < _settings.ActiveRaids.Count; i++)
                 {
                     _settings.ActiveRaids[i].RaidUpNext = i == RotationCount;
-                }
-
-                // Process RA command raids
-                if (_settings.ActiveRaids[RotationCount].AddedByRACommand)
-                {
-                    bool isMysteryRaid = _settings.ActiveRaids[RotationCount].Title.Contains("Mystery Shiny Raid");
-                    bool isUserRequestedRaid = !isMysteryRaid && _settings.ActiveRaids[RotationCount].Title.Contains("'s Requested Raid");
-
-                    if (isUserRequestedRaid || isMysteryRaid)
-                    {
-                        Log($"Raid for {_settings.ActiveRaids[RotationCount].Species} was added via RA command and will be removed from the rotation list.");
-                        _settings.ActiveRaids.RemoveAt(RotationCount);
-
-                        // Find the next enabled raid after removal (stay at current position since we removed one)
-                        nextEnabledRaidIndex = FindNextEnabledRaidIndex(RotationCount);
-                        RotationCount = nextEnabledRaidIndex != -1 ? nextEnabledRaidIndex : 0;
-                    }
                 }
 
                 // Mark first run as complete
@@ -2367,8 +2458,6 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             if (lobbyTrainers.Count == 0)
             {
-                _emptyRaid++;
-                _lostRaid++;
                 Log($"Nobody joined the raid, recovering...");
                 return (false, lobbyTrainers);
             }
