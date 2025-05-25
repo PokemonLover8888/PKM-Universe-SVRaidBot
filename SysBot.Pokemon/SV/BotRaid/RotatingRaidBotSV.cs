@@ -1234,7 +1234,9 @@ namespace SysBot.Pokemon.SV.BotRaid
         private async Task FinalizeRaidCompletion(List<(ulong, RaidMyStatus)> trainers, bool ready, CancellationToken token)
         {
             Log("Returning to overworld...");
-            await Task.Delay(2_500, token).ConfigureAwait(false);
+
+            while (!await IsOnOverworld(_overworldOffset, token).ConfigureAwait(false))
+                await Click(A, 2_000, token).ConfigureAwait(false);
 
             if (!await RecoverToOverworld(token).ConfigureAwait(false))
             {
