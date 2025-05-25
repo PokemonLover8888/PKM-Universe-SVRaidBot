@@ -622,6 +622,10 @@ namespace SysBot.Pokemon
             [Category(FeatureToggle), Description("Extra time in milliseconds to wait before changing partypk.")]
             [DisplayName("Extra Time to Prepare Raid Battler")]
             public int ExtraTimePartyPK { get; set; } = 0;
+
+            [Category(Hosting), Description("Choose whether raid codes should be displayed in uppercase or lowercase letters.")]
+            [DisplayName("Raid Code Letter Case")]
+            public RaidCodeCaseOptions RaidCodeCase { get; set; } = RaidCodeCaseOptions.Lowercase;
         }
 
         [Category(Hosting), TypeConverter(typeof(CategoryConverter<MiscSettingsCategory>))]
