@@ -79,7 +79,8 @@ namespace SysBot.Pokemon.WinForms
             }
 
             LoadControls();
-            Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "NotPaldea.net" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
+            Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "GenPKM.com" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
+            trayIcon.Text = Text;
             Task.Run(BotMonitor);
             InitUtil.InitializeStubs(Config.Mode);
             StartTcpListener();
@@ -758,6 +759,25 @@ namespace SysBot.Pokemon.WinForms
             ShowInTaskbar = true;
             trayIcon.Visible = false;
             Activate();
+
+            ResetPropertyGridScroll();
+        }
+
+        private void ResetPropertyGridScroll()
+        {
+            PG_Hub.CollapseAllGridItems();
+            PG_Hub.ExpandAllGridItems();
+
+            var gridItem = PG_Hub.SelectedGridItem;
+            if (gridItem != null)
+            {
+                while (gridItem.Parent != null)
+                {
+                    gridItem = gridItem.Parent;
+                }
+                gridItem.Expanded = true;
+                PG_Hub.SelectedGridItem = gridItem;
+            }
         }
 
         private void ExitApplication()
