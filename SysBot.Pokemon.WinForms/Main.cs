@@ -484,7 +484,18 @@ namespace SysBot.Pokemon.WinForms
             {
                 return;
             }
-            if (IsUpdating) return;
+
+            // If not exiting, minimize to tray instead
+            if (!isExiting)
+            {
+                e.Cancel = true;
+                WindowState = FormWindowState.Minimized;
+                ShowInTaskbar = false;
+                trayIcon.Visible = true;
+                trayIcon.ShowBalloonTip(2000, "S/V RaidBot", "Application minimized to system tray", ToolTipIcon.Info);
+                return;
+            }
+
             StopTcpListener();
 
             // Delete the port info file
@@ -738,6 +749,37 @@ namespace SysBot.Pokemon.WinForms
         private void ComboBox1_SelectedIndexChanged(object sender, EventArgs e)
         {
             // Theme functionality removed
+        }
+
+        private void ShowFromTray()
+        {
+            Show();
+            WindowState = FormWindowState.Normal;
+            ShowInTaskbar = true;
+            trayIcon.Visible = false;
+            Activate();
+        }
+
+        private void ExitApplication()
+        {
+            var bots = RunningEnvironment;
+            if (bots != null && bots.IsRunning)
+            {
+                var result = MessageBox.Show(
+                    "Bots are currently running. Do you want to stop all bots and exit?",
+                    "Exit Confirmation",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (result != DialogResult.Yes)
+                    return;
+
+                bots.StopAll();
+            }
+
+            isExiting = true;
+            trayIcon.Dispose();
+            Application.Exit();
         }
     }
 

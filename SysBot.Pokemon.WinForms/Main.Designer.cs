@@ -18,6 +18,10 @@ namespace SysBot.Pokemon.WinForms
             {
                 components.Dispose();
             }
+            if (disposing && trayIcon != null)
+            {
+                trayIcon.Dispose();
+            }
             base.Dispose(disposing);
         }
 
@@ -25,12 +29,17 @@ namespace SysBot.Pokemon.WinForms
 
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Main));
 
             // Initialize timer for animations
-            animationTimer = new System.Windows.Forms.Timer();
+            animationTimer = new System.Windows.Forms.Timer(this.components);
             animationTimer.Interval = 16; // ~60fps
             animationTimer.Tick += AnimationTimer_Tick;
+
+            // Initialize tray icon
+            trayIcon = new NotifyIcon(this.components);
+            trayContextMenu = new ContextMenuStrip(this.components);
 
             // Main Panel Structure
             mainLayoutPanel = new TableLayoutPanel();
@@ -45,6 +54,7 @@ namespace SysBot.Pokemon.WinForms
             btnNavBots = new Button();
             btnNavHub = new Button();
             btnNavLogs = new Button();
+            btnNavExit = new Button();
             sidebarBottomPanel = new Panel();
             btnUpdate = new Button();
             statusIndicator = new Panel();
@@ -160,6 +170,7 @@ namespace SysBot.Pokemon.WinForms
             navButtonsPanel.Controls.Add(btnNavBots);
             navButtonsPanel.Controls.Add(btnNavHub);
             navButtonsPanel.Controls.Add(btnNavLogs);
+            navButtonsPanel.Controls.Add(btnNavExit);
             navButtonsPanel.Dock = DockStyle.Fill;
             navButtonsPanel.FlowDirection = FlowDirection.TopDown;
             navButtonsPanel.Location = new Point(0, 100);
@@ -174,6 +185,7 @@ namespace SysBot.Pokemon.WinForms
             ConfigureNavButton(btnNavBots, "BOTS", 0, "Manage bot connections");
             ConfigureNavButton(btnNavHub, "CONFIGURATION", 1, "System settings");
             ConfigureNavButton(btnNavLogs, "SYSTEM LOGS", 2, "View activity logs");
+            ConfigureExitButton();
 
             // Sidebar Bottom Panel
             sidebarBottomPanel.Controls.Add(btnUpdate);
@@ -534,6 +546,9 @@ namespace SysBot.Pokemon.WinForms
             Controls.Add(mainLayoutPanel);
             Controls.Add(particlePanel);
 
+            // Configure Tray Icon
+            ConfigureTrayIcon();
+
             mainLayoutPanel.ResumeLayout(false);
             sidebarPanel.ResumeLayout(false);
             navButtonsPanel.ResumeLayout(false);
@@ -555,6 +570,151 @@ namespace SysBot.Pokemon.WinForms
 
             // Start animation timer
             animationTimer.Start();
+        }
+
+        private void ConfigureExitButton()
+        {
+            btnNavExit.BackColor = Color.FromArgb(18, 18, 18);
+            btnNavExit.Cursor = Cursors.Hand;
+            btnNavExit.FlatAppearance.BorderSize = 0;
+            btnNavExit.FlatAppearance.MouseOverBackColor = Color.FromArgb(30, 30, 30);
+            btnNavExit.FlatStyle = FlatStyle.Flat;
+            btnNavExit.Font = new Font("Segoe UI", 11F, FontStyle.Regular);
+            btnNavExit.ForeColor = Color.FromArgb(237, 66, 69); // Red color for exit
+            btnNavExit.Location = new Point(0, 220);
+            btnNavExit.Margin = new Padding(0, 40, 0, 0); // Extra margin to separate from other buttons
+            btnNavExit.Name = "btnNavExit";
+            btnNavExit.Padding = new Padding(60, 0, 0, 0);
+            btnNavExit.Size = new Size(260, 50);
+            btnNavExit.TabIndex = 3;
+            btnNavExit.Text = "EXIT";
+            btnNavExit.TextAlign = ContentAlignment.MiddleLeft;
+            btnNavExit.UseVisualStyleBackColor = false;
+            btnNavExit.Tag = new ButtonAnimationState();
+
+            btnNavExit.Paint += (s, e) => {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+                var animState = btnNavExit.Tag as ButtonAnimationState;
+
+                // Draw hover background
+                if (animState != null && animState.HoverProgress > 0)
+                {
+                    using var brush = new SolidBrush(Color.FromArgb((int)(30 * animState.HoverProgress), 237, 66, 69));
+                    e.Graphics.FillRectangle(brush, btnNavExit.ClientRectangle);
+                }
+
+                // Draw icon
+                var iconRect = new Rectangle(20, (btnNavExit.Height - 24) / 2, 24, 24);
+
+                // Apply glow effect on hover
+                if (animState != null && animState.HoverProgress > 0)
+                {
+                    var glowSize = 2 + (int)(8 * animState.HoverProgress);
+                    using var glowBrush = new SolidBrush(Color.FromArgb((int)(30 * animState.HoverProgress), 237, 66, 69));
+                    e.Graphics.FillEllipse(glowBrush, iconRect.X - glowSize / 2, iconRect.Y - glowSize / 2,
+                        iconRect.Width + glowSize, iconRect.Height + glowSize);
+                }
+
+                // Draw exit icon
+                using var iconFont = new Font("Segoe MDL2 Assets", 16F);
+                var iconText = "\uE8BB"; // Power/Exit icon
+
+                using var iconBrush = new SolidBrush(btnNavExit.ForeColor);
+                var textSize = e.Graphics.MeasureString(iconText, iconFont);
+                var textX = iconRect.X + (iconRect.Width - textSize.Width) / 2;
+                var textY = iconRect.Y + (iconRect.Height - textSize.Height) / 2;
+
+                e.Graphics.DrawString(iconText, iconFont, iconBrush, textX, textY);
+            };
+
+            btnNavExit.Click += (s, e) => ExitApplication();
+            ConfigureHoverAnimation(btnNavExit);
+        }
+
+        private void ConfigureTrayIcon()
+        {
+            // Configure tray icon
+            trayIcon.Icon = Icon;
+            trayIcon.Text = Text;
+            trayIcon.Visible = false;
+            trayIcon.DoubleClick += (s, e) => ShowFromTray();
+
+            // Configure tray context menu
+            trayContextMenu.BackColor = Color.FromArgb(35, 35, 35);
+            trayContextMenu.Font = new Font("Segoe UI", 10F);
+            trayContextMenu.Renderer = new MainMenuRenderer();
+
+            // Add menu items
+            var showMenuItem = new ToolStripMenuItem("Show Window")
+            {
+                ForeColor = Color.FromArgb(224, 224, 224)
+            };
+            showMenuItem.Click += (s, e) => ShowFromTray();
+
+            var startMenuItem = new ToolStripMenuItem("Start All Bots")
+            {
+                ForeColor = Color.FromArgb(87, 242, 135)
+            };
+            startMenuItem.Click += (s, e) => B_Start_Click(s, e);
+
+            var stopMenuItem = new ToolStripMenuItem("Stop All Bots")
+            {
+                ForeColor = Color.FromArgb(237, 66, 69)
+            };
+            stopMenuItem.Click += (s, e) => B_Stop_Click(s, e);
+
+            var exitMenuItem = new ToolStripMenuItem("Exit")
+            {
+                ForeColor = Color.FromArgb(237, 66, 69)
+            };
+            exitMenuItem.Click += (s, e) => ExitApplication();
+
+            trayContextMenu.Items.AddRange(new ToolStripItem[] {
+                showMenuItem,
+                new ToolStripSeparator(),
+                startMenuItem,
+                stopMenuItem,
+                new ToolStripSeparator(),
+                exitMenuItem
+            });
+
+            trayIcon.ContextMenuStrip = trayContextMenu;
+        }
+
+        // Custom menu renderer for dark theme
+        private class MainMenuRenderer : ToolStripProfessionalRenderer
+        {
+            public MainMenuRenderer() : base(new MainColorTable()) { }
+
+            protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+            {
+                var rc = new Rectangle(Point.Empty, e.Item.Size);
+                var c = e.Item.Selected ? Color.FromArgb(50, 50, 50) : Color.FromArgb(35, 35, 35);
+                using (var brush = new SolidBrush(c))
+                    e.Graphics.FillRectangle(brush, rc);
+            }
+
+            protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+            {
+                if (!e.Item.Enabled)
+                    e.TextColor = Color.FromArgb(100, 100, 100);
+                base.OnRenderItemText(e);
+            }
+        }
+
+        private class MainColorTable : ProfessionalColorTable
+        {
+            public override Color MenuItemSelected => Color.FromArgb(50, 50, 50);
+            public override Color MenuItemBorder => Color.FromArgb(88, 101, 242);
+            public override Color MenuBorder => Color.FromArgb(50, 50, 50);
+            public override Color ToolStripDropDownBackground => Color.FromArgb(35, 35, 35);
+            public override Color ImageMarginGradientBegin => Color.FromArgb(35, 35, 35);
+            public override Color ImageMarginGradientMiddle => Color.FromArgb(35, 35, 35);
+            public override Color ImageMarginGradientEnd => Color.FromArgb(35, 35, 35);
+            public override Color SeparatorDark => Color.FromArgb(50, 50, 50);
+            public override Color SeparatorLight => Color.FromArgb(60, 60, 60);
         }
 
         private void ConfigureNavButton(Button btn, string text, int index, string tooltip)
@@ -954,6 +1114,7 @@ namespace SysBot.Pokemon.WinForms
         private Button btnNavBots;
         private Button btnNavHub;
         private Button btnNavLogs;
+        private Button btnNavExit;
         private Panel sidebarBottomPanel;
         private Button btnUpdate;
         private Label titleLabel;
@@ -981,6 +1142,9 @@ namespace SysBot.Pokemon.WinForms
         private Panel particlePanel;
         private Panel statusIndicator;
         private System.Windows.Forms.Timer animationTimer;
+        private NotifyIcon trayIcon;
+        private ContextMenuStrip trayContextMenu;
+        private bool isExiting = false;
 
         // Compatibility aliases
         private Button updater => btnUpdate;
