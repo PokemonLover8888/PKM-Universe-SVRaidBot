@@ -4197,7 +4197,23 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         private async Task SkipRaidOnLosses(CancellationToken token)
         {
             Log($"We had {_settings.LobbyOptions.SkipRaidLimit} lost/empty raids.. Moving on!");
-            _firstRun = false;
+
+            // Remove skipped RA command raids BEFORE advancing rotation
+            if (_settings.ActiveRaids[RotationCount].AddedByRACommand)
+            {
+                bool isMysteryRaid = _settings.ActiveRaids[RotationCount].Title.Contains("Mystery Shiny Raid");
+                bool isUserRequestedRaid = !isMysteryRaid && _settings.ActiveRaids[RotationCount].Title.Contains("'s Requested Raid");
+
+                if (isUserRequestedRaid || isMysteryRaid)
+                {
+                    Log($"Raid for {_settings.ActiveRaids[RotationCount].Species} was skipped and will be removed from the rotation list.");
+                    _settings.ActiveRaids.RemoveAt(RotationCount);
+                    // Adjust RotationCount if needed after removal
+                    if (RotationCount >= _settings.ActiveRaids.Count)
+                        RotationCount = 0;
+                }
+            }
+
             await SanitizeRotationCount(token).ConfigureAwait(false);
             await EnqueueEmbed(null, "", false, false, true, false, token).ConfigureAwait(false);
             await CloseGame(_hub.Config, token).ConfigureAwait(false);
