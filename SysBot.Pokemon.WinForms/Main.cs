@@ -758,26 +758,24 @@ namespace SysBot.Pokemon.WinForms
             WindowState = FormWindowState.Normal;
             ShowInTaskbar = true;
             trayIcon.Visible = false;
+            BringToFront();
             Activate();
 
-            ResetPropertyGridScroll();
-        }
+            int headerHeight = headerPanel.Height + 10;
 
-        private void ResetPropertyGridScroll()
-        {
-            PG_Hub.CollapseAllGridItems();
-            PG_Hub.ExpandAllGridItems();
+            // Adjust padding only if panels haven't been initialized yet (checking Padding.Top as an indicator)
+            if (hubPanel.Padding.Top <= 40)
+                hubPanel.Padding = new Padding(40, headerHeight, 40, 40);
 
-            var gridItem = PG_Hub.SelectedGridItem;
-            if (gridItem != null)
-            {
-                while (gridItem.Parent != null)
-                {
-                    gridItem = gridItem.Parent;
-                }
-                gridItem.Expanded = true;
-                PG_Hub.SelectedGridItem = gridItem;
-            }
+            if (logsPanel.Padding.Top <= 40)
+                logsPanel.Padding = new Padding(40, headerHeight, 40, 40);
+
+            // Force layout recalculation explicitly
+            hubPanel.PerformLayout();
+            PG_Hub.Refresh();
+
+            logsPanel.PerformLayout();
+            RTB_Logs.Refresh();
         }
 
         private void ExitApplication()

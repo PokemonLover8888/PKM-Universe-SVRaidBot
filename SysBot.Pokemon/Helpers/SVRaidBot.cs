@@ -2,7 +2,7 @@
 {
     public static class SVRaidBot
     {
-        public const string Version = "v8.5.8";
+        public const string Version = "v8.5.9";
         public const string Repo = "https://github.com/bdawg1989/SVRaidBot";
         public const string ConfigPath = "config.json";
     }
