@@ -79,8 +79,8 @@ namespace SysBot.Pokemon.WinForms
             }
 
             LoadControls();
-            Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "GenPKM.com" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
-            trayIcon.Text = Text;
+            Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "S/V RaidBot" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
+            trayIcon.Text = string.IsNullOrEmpty(Config.Hub.BotName) ? "S/V RaidBot" : Config.Hub.BotName;
             Task.Run(BotMonitor);
             InitUtil.InitializeStubs(Config.Mode);
             StartTcpListener();
