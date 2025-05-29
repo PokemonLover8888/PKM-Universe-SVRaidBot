@@ -70,8 +70,34 @@ namespace SysBot.Pokemon.WinForms
 
             if (File.Exists(Program.ConfigPath))
             {
-                var lines = File.ReadAllText(Program.ConfigPath);
-                Config = JsonSerializer.Deserialize(lines, ProgramConfigContext.Default.ProgramConfig) ?? new ProgramConfig();
+                try
+                {
+                    var lines = File.ReadAllText(Program.ConfigPath);
+                    Config = JsonSerializer.Deserialize(lines, ProgramConfigContext.Default.ProgramConfig) ?? new ProgramConfig();
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogError($"Config corrupted, trying backup: {ex.Message}", "Config");
+
+                    // Try to load from most recent backup
+                    var backupFiles = Directory.GetFiles(Path.GetDirectoryName(Program.ConfigPath), "*.backup_*")
+                        .OrderByDescending(f => new FileInfo(f).LastWriteTime)
+                        .FirstOrDefault();
+
+                    if (backupFiles != null && File.Exists(backupFiles))
+                    {
+                        var backupLines = File.ReadAllText(backupFiles);
+                        Config = JsonSerializer.Deserialize(backupLines, ProgramConfigContext.Default.ProgramConfig) ?? new ProgramConfig();
+                        File.WriteAllText(Program.ConfigPath, backupLines); // Restore backup
+                        LogUtil.LogInfo($"Restored config from backup", "Config");
+                    }
+                    else
+                    {
+                        Config = new ProgramConfig();
+                        LogUtil.LogError("No valid backup found, using new config", "Config");
+                    }
+                }
+
                 LogConfig.MaxArchiveFiles = Config.Hub.MaxArchiveFiles;
                 LogConfig.LoggingEnabled = Config.Hub.LoggingEnabled;
 
@@ -559,9 +585,36 @@ namespace SysBot.Pokemon.WinForms
 
         private void SaveCurrentConfig()
         {
-            var cfg = GetCurrentConfiguration();
-            var lines = JsonSerializer.Serialize(cfg, ProgramConfigContext.Default.ProgramConfig);
-            File.WriteAllText(Program.ConfigPath, lines);
+            try
+            {
+                var cfg = GetCurrentConfiguration();
+                var lines = JsonSerializer.Serialize(cfg, ProgramConfigContext.Default.ProgramConfig);
+
+                // Create backup before saving
+                if (File.Exists(Program.ConfigPath))
+                {
+                    string backupPath = Program.ConfigPath + $".backup_{DateTime.Now:yyyyMMdd_HHmmss}";
+                    File.Copy(Program.ConfigPath, backupPath, true);
+
+                    // Keep only last 5 backups
+                    var backupFiles = Directory.GetFiles(Path.GetDirectoryName(Program.ConfigPath), "*.backup_*")
+                        .OrderByDescending(f => new FileInfo(f).LastWriteTime)
+                        .Skip(5);
+                    foreach (var oldBackup in backupFiles)
+                    {
+                        try { File.Delete(oldBackup); } catch { }
+                    }
+                }
+
+                // Write to temp file first, then move (atomic write)
+                string tempPath = Program.ConfigPath + ".tmp";
+                File.WriteAllText(tempPath, lines);
+                File.Move(tempPath, Program.ConfigPath, true);
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError($"Failed to save config: {ex.Message}", "Config");
+            }
         }
 
         [JsonSerializable(typeof(ProgramConfig))]
