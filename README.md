@@ -12,7 +12,10 @@
 # How-To Video
 https://youtu.be/wlFE04oiqGs?si=EDoVRaocGyCapN9n
 
-# 📱 Access PokeBot from Any Device on Your Network
+
+# 📱 Access SVRaidBot from Any Device on Your Network
+
+![image](https://github.com/user-attachments/assets/cc4eb0f2-f3f7-4ee7-82f2-b771f6fbbd56)
 
 ## Quick Setup
 
