@@ -20,7 +20,8 @@ namespace SysBot.Pokemon.WinForms
     public sealed partial class Main : Form
     {
         private readonly List<PokeBotState> Bots = new();
-        private ProgramConfig Config { get; set; }
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        internal ProgramConfig Config { get; set; }
         private IPokeBotRunner RunningEnvironment { get; set; }
         public readonly ISwitchConnectionAsync? SwitchConnection;
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -114,14 +115,23 @@ namespace SysBot.Pokemon.WinForms
             LoadControls();
             Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "S/V RaidBot" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
             trayIcon.Text = (Config?.Hub?.BotName != null && !string.IsNullOrEmpty(Config.Hub.BotName)) ? Config.Hub.BotName : "S/V RaidBot";
-            Task.Run(BotMonitor);
+            _ = Task.Run(BotMonitor);
             InitUtil.InitializeStubs(Config.Mode);
             // Start periodic update checks
             StartUpdateCheckTimer();
 
             LogUtil.LogInfo($"Bot initialization complete", "System");
-
-            this.InitWebServer();
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    this.InitWebServer();
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogError($"Failed to initialize web server: {ex.Message}", "System");
+                }
+            });
         }
 
         private void RTB_Logs_TextChanged(object sender, EventArgs e)
