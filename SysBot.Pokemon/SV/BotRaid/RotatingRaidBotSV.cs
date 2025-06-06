@@ -491,6 +491,7 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// <param name="token">Cancellation token</param>
         private async Task InnerLoop(CancellationToken token)
         {
+
             try
             {
                 bool partyReady;
@@ -503,6 +504,23 @@ namespace SysBot.Pokemon.SV.BotRaid
                 {
                     try
                     {
+                        if (Config.CurrentRoutineType == PokeRoutineType.Idle)
+                        {
+                            Log("Bot is in idle state.");
+
+                            // Wait while in idle state
+                            while (Config.CurrentRoutineType == PokeRoutineType.Idle && !token.IsCancellationRequested)
+                            {
+                                await Task.Delay(1000, token).ConfigureAwait(false);
+                            }
+
+                            if (!token.IsCancellationRequested)
+                            {
+                                Log("Bot resumed from idle state. Continuing raid operations...");
+                            }
+
+                            continue;
+                        }
                         try
                         {
                             await InitializeSessionOffsets(token).ConfigureAwait(false);
