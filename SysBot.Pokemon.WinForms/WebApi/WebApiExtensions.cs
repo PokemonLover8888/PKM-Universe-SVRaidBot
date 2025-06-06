@@ -256,8 +256,35 @@ public static class WebApiExtensions
             "STATUS" => GetBotStatuses(botId),
             "ISREADY" => CheckReady(),
             "INFO" => GetInstanceInfo(),
+            "VERSION" => SVRaidBot.Version,
+            "UPDATE" => TriggerUpdate(),
             _ => $"ERROR: Unknown command '{cmd}'"
         };
+    }
+
+    private static string TriggerUpdate()
+    {
+        try
+        {
+            if (_main == null)
+                return "ERROR: Main form not initialized";
+
+            _main.BeginInvoke((MethodInvoker)(async () =>
+            {
+                var (updateAvailable, _, newVersion) = await UpdateChecker.CheckForUpdatesAsync(false);
+                if (updateAvailable)
+                {
+                    var updateForm = new UpdateForm(false, newVersion, true);
+                    updateForm.PerformUpdate();
+                }
+            }));
+
+            return "OK: Update triggered";
+        }
+        catch (Exception ex)
+        {
+            return $"ERROR: {ex.Message}";
+        }
     }
 
     private static string ExecuteGlobalCommand(BotControlCommand command)

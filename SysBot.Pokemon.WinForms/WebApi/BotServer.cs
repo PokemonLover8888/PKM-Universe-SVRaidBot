@@ -197,6 +197,37 @@ public class BotServer(Main mainForm, int port = 9090, int tcpPort = 9091) : IDi
         }
     }
 
+    private async Task<string> UpdateAllInstances(HttpListenerRequest request)
+    {
+        try
+        {
+            var result = await UpdateManager.UpdateAllInstancesAsync(_mainForm, _tcpPort);
+
+            return JsonSerializer.Serialize(new
+            {
+                Success = result.UpdatesFailed == 0 && result.UpdatesNeeded > 0,
+                result.TotalInstances,
+                result.UpdatesNeeded,
+                result.UpdatesStarted,
+                result.UpdatesFailed,
+                Results = result.InstanceResults.Select(r => new
+                {
+                    r.Port,
+                    r.ProcessId,
+                    r.CurrentVersion,
+                    r.LatestVersion,
+                    r.NeedsUpdate,
+                    r.UpdateStarted,
+                    r.Error
+                })
+            });
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResponse(ex.Message);
+        }
+    }
+
     private static int ExtractPort(string path)
     {
         var parts = path.Split('/');
@@ -555,7 +586,7 @@ public class BotServer(Main mainForm, int port = 9090, int tcpPort = 9091) : IDi
         };
     }
 
-    private static string QueryRemote(int port, string command)
+    public static string QueryRemote(int port, string command)
     {
         try
         {
