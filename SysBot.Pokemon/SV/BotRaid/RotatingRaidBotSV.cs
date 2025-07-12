@@ -3703,6 +3703,13 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                     // Back out for next attempt if needed
                     if (attemptCount < maxAttempts && !connected)
                         await Click(B, 0_500, token).ConfigureAwait(false);
+                    
+                    // If attemptCount 1 fails, press A to try to get past the splash screen. If this is set to 2 it will connect just in time on attempt 5 (Tested implementation, 1 works the best) 
+                    if (attemptCount == 1)
+                    {
+                        Log("Pressing A in case our switch is at the splash screen, and not in overworld.");
+                        await Click(A, 0_500, token).ConfigureAwait(false); // Press A to try to get past the splash screen
+                    }
                 }
                 catch (Exception ex)
                 {
