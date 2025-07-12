@@ -3662,7 +3662,9 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             Color = Color.Red,
                             ThumbnailUrl = "https://raw.githubusercontent.com/bdawg1989/sprites/main/imgs/x.png"
                         };
-                        _ = await EchoUtil.RaidEmbed(null, "", embed);
+                        
+                        //You should remove the await keyword since EchoUtil.RaidEmbed returns void, and replace null with an empty byte array to satisfy the non-nullable parameter.
+                        EchoUtil.RaidEmbed([], "", embed);
 
                         await Click(B, 0_500, token).ConfigureAwait(false);
                         await Click(B, 0_500, token).ConfigureAwait(false);
