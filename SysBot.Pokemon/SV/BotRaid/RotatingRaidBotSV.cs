@@ -104,6 +104,10 @@ namespace SysBot.Pokemon.SV.BotRaid
         private const int MaxTeleportRetries = 3;
         private const float TeleportDistanceThreshold = 2.5f;
 
+        // Constants for raid type identification
+        private const string MysteryRaidTitle = "Mystery Shiny Raid";
+        private const string UserRequestedRaidSuffix = "'s Requested Raid";
+
         /// <summary>
         /// Main execution loop for the raid bot
         /// </summary>
@@ -919,7 +923,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
 
             _settings.ActiveRaids.RemoveAll(p => p.AddedByRACommand);
-            _settings.ActiveRaids.RemoveAll(p => p.Title == "Mystery Shiny Raid");
+            _settings.ActiveRaids.RemoveAll(p => p.Title == MysteryRaidTitle);
             await CleanExit(CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -1293,21 +1297,8 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             await CountRaids(trainers, token).ConfigureAwait(false);
 
-            // Remove completed RA command raids BEFORE advancing rotation
-            if (_settings.ActiveRaids[RotationCount].AddedByRACommand)
-            {
-                bool isMysteryRaid = _settings.ActiveRaids[RotationCount].Title.Contains("Mystery Shiny Raid");
-                bool isUserRequestedRaid = !isMysteryRaid && _settings.ActiveRaids[RotationCount].Title.Contains("'s Requested Raid");
-
-                if (isUserRequestedRaid || isMysteryRaid)
-                {
-                    Log($"Raid for {_settings.ActiveRaids[RotationCount].Species} was completed and will be removed from the rotation list.");
-                    _settings.ActiveRaids.RemoveAt(RotationCount);
-                    // Adjust RotationCount if needed after removal
-                    if (RotationCount >= _settings.ActiveRaids.Count)
-                        RotationCount = 0;
-                }
-            }
+            // Remove completed temporary raids BEFORE advancing rotation
+            RemoveTemporaryRaidIfNeeded("completed");
 
             if (_settings.ActiveRaids.Count > 1)
             {
@@ -1710,7 +1701,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 Seed = seedValue,
                 Species = Species.None,
                 SpeciesForm = pk.Form,
-                Title = "Mystery Shiny Raid",
+                Title = MysteryRaidTitle,
                 AddedByRACommand = true,
                 DifficultyLevel = randomDifficultyLevel,
                 StoryProgress = (GameProgressEnum)gameProgress,
@@ -1828,6 +1819,40 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             // Otherwise, use the raid code
             return false;
+        }
+
+        /// <summary>
+        /// Checks if the current raid is a temporary raid (Mystery or User Requested) that should be removed after completion
+        /// </summary>
+        /// <returns>True if the raid is temporary and should be removed</returns>
+        private bool IsTemporaryRaid()
+        {
+            var currentRaid = _settings.ActiveRaids[RotationCount];
+
+            if (!currentRaid.AddedByRACommand)
+                return false;
+
+            bool isMysteryRaid = currentRaid.Title.Contains(MysteryRaidTitle);
+            bool isUserRequestedRaid = !isMysteryRaid && currentRaid.Title.Contains(UserRequestedRaidSuffix);
+
+            return isMysteryRaid || isUserRequestedRaid;
+        }
+
+        /// <summary>
+        /// Removes the current raid from rotation if it's a temporary raid, and adjusts rotation count
+        /// </summary>
+        /// <param name="reason">Reason for removal (e.g., "completed" or "skipped")</param>
+        private void RemoveTemporaryRaidIfNeeded(string reason)
+        {
+            if (IsTemporaryRaid())
+            {
+                Log($"Raid for {_settings.ActiveRaids[RotationCount].Species} was {reason} and will be removed from the rotation list.");
+                _settings.ActiveRaids.RemoveAt(RotationCount);
+
+                // Adjust RotationCount if needed after removal
+                if (RotationCount >= _settings.ActiveRaids.Count)
+                    RotationCount = 0;
+            }
         }
 
         /// <summary>
@@ -1957,7 +1982,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 int index = (currentRotationCount + i) % count;
                 RotatingRaidParameters raid = raids[index];
-                if (raid.ActiveInRotation && raid.AddedByRACommand && !raid.Title.Contains("Mystery Shiny Raid"))
+                if (raid.ActiveInRotation && raid.AddedByRACommand && !raid.Title.Contains(MysteryRaidTitle))
                 {
                     return index; // Prioritize user-requested raids
                 }
@@ -1970,7 +1995,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 {
                     int index = (currentRotationCount + i) % count;
                     RotatingRaidParameters raid = raids[index];
-                    if (raid.ActiveInRotation && raid.Title.Contains("Mystery Shiny Raid"))
+                    if (raid.ActiveInRotation && raid.Title.Contains(MysteryRaidTitle))
                     {
                         return index; // Only consider Mystery Shiny Raids after user-requested raids
                     }
@@ -2453,7 +2478,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             TimeSpan wait;
 
             if (_settings.ActiveRaids[RotationCount].AddedByRACommand &&
-                _settings.ActiveRaids[RotationCount].Title != "Mystery Shiny Raid")
+                _settings.ActiveRaids[RotationCount].Title != MysteryRaidTitle)
             {
                 wait = TimeSpan.FromSeconds(160) - TimeSpan.FromMilliseconds((int)_settings.EmbedToggles.RequestEmbedTime);
             }
@@ -2937,7 +2962,7 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             // Apply delay only if the raid was added by RA command, not a Mystery Shiny Raid, and has a code
             if (_settings.ActiveRaids[RotationCount].AddedByRACommand &&
-                _settings.ActiveRaids[RotationCount].Title != "Mystery Shiny Raid" &&
+                _settings.ActiveRaids[RotationCount].Title != MysteryRaidTitle &&
                 !string.IsNullOrEmpty(code) && code != "Free For All")
             {
                 await Task.Delay((int)_settings.EmbedToggles.RequestEmbedTime, token).ConfigureAwait(false);
@@ -3993,7 +4018,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             await LogPlayerLocation(token);
             if (_settings.RaidSettings.MysteryRaids)
             {
-                int mysteryRaidCount = _settings.ActiveRaids.Count(raid => raid.Title.Contains("Mystery Shiny Raid"));
+                int mysteryRaidCount = _settings.ActiveRaids.Count(raid => raid.Title.Contains(MysteryRaidTitle));
                 if (mysteryRaidCount <= 1)
                 {
                     try
@@ -4344,21 +4369,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         {
             Log($"We had {_settings.LobbyOptions.SkipRaidLimit} lost/empty raids.. Moving on!");
 
-            // Remove skipped RA command raids BEFORE advancing rotation
-            if (_settings.ActiveRaids[RotationCount].AddedByRACommand)
-            {
-                bool isMysteryRaid = _settings.ActiveRaids[RotationCount].Title.Contains("Mystery Shiny Raid");
-                bool isUserRequestedRaid = !isMysteryRaid && _settings.ActiveRaids[RotationCount].Title.Contains("'s Requested Raid");
-
-                if (isUserRequestedRaid || isMysteryRaid)
-                {
-                    Log($"Raid for {_settings.ActiveRaids[RotationCount].Species} was skipped and will be removed from the rotation list.");
-                    _settings.ActiveRaids.RemoveAt(RotationCount);
-                    // Adjust RotationCount if needed after removal
-                    if (RotationCount >= _settings.ActiveRaids.Count)
-                        RotationCount = 0;
-                }
-            }
+            // Remove skipped temporary raids BEFORE advancing rotation
+            RemoveTemporaryRaidIfNeeded("skipped");
 
             await SanitizeRotationCount(token).ConfigureAwait(false);
             await EnqueueEmbed(null, "", false, false, true, false, token).ConfigureAwait(false);
