@@ -100,6 +100,10 @@ namespace SysBot.Pokemon.SV.BotRaid
         private bool _isRecoveringFromReboot;
         private volatile bool _isPaused = false;
 
+        // Constants for teleport retry logic
+        private const int MaxTeleportRetries = 3;
+        private const float TeleportDistanceThreshold = 2.5f;
+
         /// <summary>
         /// Main execution loop for the raid bot
         /// </summary>
@@ -801,9 +805,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             var user = _settings.ActiveRaids[RotationCount].User;
             var mentionedUsers = _settings.ActiveRaids[RotationCount].MentionedUsers;
 
-            bool isFreeForAll = !_settings.ActiveRaids[RotationCount].IsCoded || _emptyRaid >= _settings.LobbyOptions.EmptyRaidLimit;
-
-            if (!isFreeForAll)
+            if (!IsFreeForAllRaid())
             {
                 try
                 {
@@ -1808,6 +1810,27 @@ namespace SysBot.Pokemon.SV.BotRaid
         }
 
         /// <summary>
+        /// Determines if the current raid should be treated as free-for-all (no code required)
+        /// </summary>
+        /// <returns>True if the raid should be free-for-all, false if it should use a raid code</returns>
+        private bool IsFreeForAllRaid()
+        {
+            var currentRaid = _settings.ActiveRaids[RotationCount];
+
+            // If raid is not coded at all, it's not a "free-for-all" - it's just uncoded
+            if (!currentRaid.IsCoded)
+                return false;
+
+            // If we've hit the empty raid limit and OpenLobby is enabled, make it free-for-all
+            if (_emptyRaid >= _settings.LobbyOptions.EmptyRaidLimit &&
+                _settings.LobbyOptions.LobbyMethod == LobbyMethodOptions.OpenLobby)
+                return true;
+
+            // Otherwise, use the raid code
+            return false;
+        }
+
+        /// <summary>
         /// Sanitizes the rotation count to ensure it's valid
         /// </summary>
         private async Task SanitizeRotationCount(CancellationToken token)
@@ -2064,17 +2087,15 @@ namespace SysBot.Pokemon.SV.BotRaid
                         (raid.Coordinates[0], raid.Coordinates[1], raid.Coordinates[2])))
                     .First();
 
-                const float threshold = 2.5f;  // Increased threshold to be more forgiving
-                const int maxTeleportRetries = 3;
                 float distance = CalculateDistance(playerLocation,
                     (nearestRaid.Coordinates[0], nearestRaid.Coordinates[1], nearestRaid.Coordinates[2]));
 
-                if (distance > threshold)
+                if (distance > TeleportDistanceThreshold)
                 {
-                    if (_teleportRetryCount < maxTeleportRetries)
+                    if (_teleportRetryCount < MaxTeleportRetries)
                     {
                         _teleportRetryCount++;
-                        Log($"Player is too far from nearest den (distance: {distance:F2}, threshold: {threshold}). Retry attempt {_teleportRetryCount}/{maxTeleportRetries}. Restarting game to teleport.");
+                        Log($"Player is too far from nearest den (distance: {distance:F2}, threshold: {TeleportDistanceThreshold}). Retry attempt {_teleportRetryCount}/{MaxTeleportRetries}. Restarting game to teleport.");
                         await CloseGame(_hub.Config, token).ConfigureAwait(false);
                         await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
                         return 2;
@@ -2082,7 +2103,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                     else
                     {
                         // Max retries exceeded, continue anyway and reset counter
-                        Log($"Player is still far from nearest den after {maxTeleportRetries} retries (distance: {distance:F2}). Continuing anyway...");
+                        Log($"Player is still far from nearest den after {MaxTeleportRetries} retries (distance: {distance:F2}). Continuing anyway...");
                         _teleportRetryCount = 0;
                     }
                 }
@@ -2090,22 +2111,22 @@ namespace SysBot.Pokemon.SV.BotRaid
                 {
                     // Player is close enough, reset retry counter
                     _teleportRetryCount = 0;
-                    Log($"Player is near den (distance: {distance:F2}, threshold: {threshold}).");
+                    Log($"Player is near den (distance: {distance:F2}, threshold: {TeleportDistanceThreshold}).");
                 }
             }
             else
             {
-                if (_teleportRetryCount < 3)
+                if (_teleportRetryCount < MaxTeleportRetries)
                 {
                     _teleportRetryCount++;
-                    Log($"No active dens found. Retry attempt {_teleportRetryCount}/3. Restarting game to find and teleport to a valid den.");
+                    Log($"No active dens found. Retry attempt {_teleportRetryCount}/{MaxTeleportRetries}. Restarting game to find and teleport to a valid den.");
                     await CloseGame(_hub.Config, token).ConfigureAwait(false);
                     await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
                     return 2;
                 }
                 else
                 {
-                    Log("No active dens found after 3 retries. Continuing anyway...");
+                    Log($"No active dens found after {MaxTeleportRetries} retries. Continuing anyway...");
                     _teleportRetryCount = 0;
                 }
             }
@@ -2174,10 +2195,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 var user = _settings.ActiveRaids[RotationCount].User;
                 var mentionedUsers = _settings.ActiveRaids[RotationCount].MentionedUsers;
 
-                // Determine if the raid is a "Free For All"
-                bool isFreeForAll = !_settings.ActiveRaids[RotationCount].IsCoded || _emptyRaid >= _settings.LobbyOptions.EmptyRaidLimit;
-
-                if (!isFreeForAll)
+                if (!IsFreeForAllRaid())
                 {
                     try
                     {
@@ -2210,10 +2228,11 @@ namespace SysBot.Pokemon.SV.BotRaid
             await Click(A, 3_000, token).ConfigureAwait(false);
             await Click(A, 3_000, token).ConfigureAwait(false);
 
-            if (!_settings.ActiveRaids[RotationCount].IsCoded || (_settings.ActiveRaids[RotationCount].IsCoded && _emptyRaid == _settings.LobbyOptions.EmptyRaidLimit && _settings.LobbyOptions.LobbyMethod == LobbyMethodOptions.OpenLobby))
+            // Select "Don't use a Link Code" if raid is uncoded or free-for-all
+            if (!_settings.ActiveRaids[RotationCount].IsCoded || IsFreeForAllRaid())
             {
-                if (_settings.ActiveRaids[RotationCount].IsCoded && _emptyRaid == _settings.LobbyOptions.EmptyRaidLimit && _settings.LobbyOptions.LobbyMethod == LobbyMethodOptions.OpenLobby)
-                    Log($"We had {_settings.LobbyOptions.EmptyRaidLimit} empty raids.. Opening this raid to all!");
+                if (IsFreeForAllRaid())
+                    Log($"Empty raid limit reached ({_settings.LobbyOptions.EmptyRaidLimit}). Opening this raid to all!");
                 await Click(DDOWN, 1_000, token).ConfigureAwait(false);
             }
 
