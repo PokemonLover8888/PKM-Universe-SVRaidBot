@@ -74,6 +74,7 @@ namespace SysBot.Pokemon.SV.BotRaid
         private int _emptyRaid;
         private int _lostRaid;
         private bool _firstRun = true;
+        private int _teleportRetryCount = 0;
         public static int RotationCount { get; set; }
         private ulong _todaySeed;
         private ulong _overworldOffset;
@@ -1814,6 +1815,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             try
             {
                 await Task.Delay(50, token).ConfigureAwait(false);
+
                 if (_settings.ActiveRaids.Count == 0)
                 {
                     Log("ActiveRaids is empty. Exiting SanitizeRotationCount.");
@@ -1821,22 +1823,55 @@ namespace SysBot.Pokemon.SV.BotRaid
                     return;
                 }
 
+                // Store the current raid to verify we're actually advancing
+                int previousRotationCount = RotationCount;
+                string previousSpecies = _settings.ActiveRaids[RotationCount].Species.ToString();
+
                 // Always advance to next raid (this fixes the replay issue)
                 int nextEnabledRaidIndex = FindNextEnabledRaidIndex((RotationCount + 1) % _settings.ActiveRaids.Count);
                 if (nextEnabledRaidIndex == -1)
                 {
-                    Log("No enabled raids found. Wrapping to start.");
+                    Log("No enabled raids found from current position. Wrapping to start.");
                     nextEnabledRaidIndex = FindNextEnabledRaidIndex(0);
                 }
 
                 if (nextEnabledRaidIndex == -1)
                 {
-                    Log("No enabled raids found at all. Setting to 0.");
+                    Log("No enabled raids found at all. Enabling all raids and starting from 0.");
+                    // Emergency fallback: re-enable all raids if none are enabled
+                    for (int i = 0; i < _settings.ActiveRaids.Count; i++)
+                    {
+                        _settings.ActiveRaids[i].ActiveInRotation = true;
+                    }
                     RotationCount = 0;
                     return;
                 }
 
+                // Assign the next rotation
                 RotationCount = nextEnabledRaidIndex;
+
+                // Handle random rotation - must be checked BEFORE priority raids
+                if (_settings.RaidSettings.RandomRotation)
+                {
+                    Log("Random rotation enabled. Selecting random raid.");
+                    ProcessRandomRotation();
+                    // Verify we got a valid rotation after random selection
+                    if (RotationCount >= _settings.ActiveRaids.Count)
+                    {
+                        Log($"Random rotation resulted in invalid index {RotationCount}. Resetting to 0.");
+                        RotationCount = 0;
+                    }
+                }
+                else
+                {
+                    // Check for priority raids (RA commands take precedence) - only in sequential mode
+                    int nextPriorityIndex = FindNextPriorityRaidIndex(RotationCount, _settings.ActiveRaids);
+                    if (nextPriorityIndex != -1 && nextPriorityIndex != RotationCount)
+                    {
+                        Log($"Priority raid found at index {nextPriorityIndex}. Switching from {RotationCount}.");
+                        RotationCount = nextPriorityIndex;
+                    }
+                }
 
                 // Update RaidUpNext for the next raid
                 for (int i = 0; i < _settings.ActiveRaids.Count; i++)
@@ -1850,21 +1885,14 @@ namespace SysBot.Pokemon.SV.BotRaid
                     _firstRun = false;
                 }
 
-                // Handle random rotation
-                if (_settings.RaidSettings.RandomRotation)
+                // Verify we're not stuck on the same raid (unless there's only 1 raid)
+                if (_settings.ActiveRaids.Count > 1 && RotationCount == previousRotationCount)
                 {
-                    ProcessRandomRotation();
-                    return;
+                    Log($"WARNING: Rotation count did not advance from {previousRotationCount} ({previousSpecies}). Forcing advancement.");
+                    RotationCount = (RotationCount + 1) % _settings.ActiveRaids.Count;
                 }
 
-                // Check for priority raids (RA commands take precedence)
-                int nextPriorityIndex = FindNextPriorityRaidIndex(RotationCount, _settings.ActiveRaids);
-                if (nextPriorityIndex != -1)
-                {
-                    RotationCount = nextPriorityIndex;
-                }
-
-                Log($"Next raid in the list: {_settings.ActiveRaids[RotationCount].Species} (RotationCount: {RotationCount}).");
+                Log($"Next raid in the list: {_settings.ActiveRaids[RotationCount].Species} (RotationCount: {RotationCount}, Previous: {previousRotationCount}).");
             }
             catch (Exception ex)
             {
@@ -2036,24 +2064,50 @@ namespace SysBot.Pokemon.SV.BotRaid
                         (raid.Coordinates[0], raid.Coordinates[1], raid.Coordinates[2])))
                     .First();
 
-                const float threshold = 2.0f;
+                const float threshold = 2.5f;  // Increased threshold to be more forgiving
+                const int maxTeleportRetries = 3;
                 float distance = CalculateDistance(playerLocation,
                     (nearestRaid.Coordinates[0], nearestRaid.Coordinates[1], nearestRaid.Coordinates[2]));
 
-                if (distance >= threshold)
+                if (distance > threshold)
                 {
-                    Log($"Player is too far from nearest den (distance: {distance:F2}). Restarting game to teleport.");
-                    await CloseGame(_hub.Config, token).ConfigureAwait(false);
-                    await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
-                    return 2;
+                    if (_teleportRetryCount < maxTeleportRetries)
+                    {
+                        _teleportRetryCount++;
+                        Log($"Player is too far from nearest den (distance: {distance:F2}, threshold: {threshold}). Retry attempt {_teleportRetryCount}/{maxTeleportRetries}. Restarting game to teleport.");
+                        await CloseGame(_hub.Config, token).ConfigureAwait(false);
+                        await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
+                        return 2;
+                    }
+                    else
+                    {
+                        // Max retries exceeded, continue anyway and reset counter
+                        Log($"Player is still far from nearest den after {maxTeleportRetries} retries (distance: {distance:F2}). Continuing anyway...");
+                        _teleportRetryCount = 0;
+                    }
+                }
+                else
+                {
+                    // Player is close enough, reset retry counter
+                    _teleportRetryCount = 0;
+                    Log($"Player is near den (distance: {distance:F2}, threshold: {threshold}).");
                 }
             }
             else
             {
-                Log("No active dens found. Restarting game to find and teleport to a valid den.");
-                await CloseGame(_hub.Config, token).ConfigureAwait(false);
-                await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
-                return 2;
+                if (_teleportRetryCount < 3)
+                {
+                    _teleportRetryCount++;
+                    Log($"No active dens found. Retry attempt {_teleportRetryCount}/3. Restarting game to find and teleport to a valid den.");
+                    await CloseGame(_hub.Config, token).ConfigureAwait(false);
+                    await StartGameRaid(_hub.Config, token).ConfigureAwait(false);
+                    return 2;
+                }
+                else
+                {
+                    Log("No active dens found after 3 retries. Continuing anyway...");
+                    _teleportRetryCount = 0;
+                }
             }
 
             if (!await ConnectToOnline(_hub.Config, token))
@@ -2177,7 +2231,8 @@ namespace SysBot.Pokemon.SV.BotRaid
             foreach (var l in _settings.ActiveRaids[RotationCount].PartyPK)
                 len += l;
 
-            if (len.Length > 1 && _emptyRaid == 0)
+            // Always switch party Pokemon if configured, regardless of empty raid count
+            if (len.Length > 1)
             {
                 Log("Preparing PartyPK. Sit tight.");
                 await Task.Delay(3_000 + settings.ExtraTimePartyPK, token).ConfigureAwait(false);
@@ -2834,22 +2889,37 @@ namespace SysBot.Pokemon.SV.BotRaid
                 await UpdateRaidEmbedInfo(token);
             }
 
-            // Determine if the raid is a "Free For All" based on the settings and conditions
-            if (_settings.ActiveRaids[RotationCount].IsCoded && _emptyRaid < _settings.LobbyOptions.EmptyRaidLimit)
+            // Determine if the raid should use a code or be "Free For All"
+            if (_settings.ActiveRaids[RotationCount].IsCoded)
             {
-                // If it's not a "Free For All", retrieve the raid code
-                code = await GetRaidCode(token).ConfigureAwait(false);
+                // Raid is configured to be coded
+                if (_emptyRaid < _settings.LobbyOptions.EmptyRaidLimit)
+                {
+                    // Haven't hit empty raid limit yet, use a code
+                    code = await GetRaidCode(token).ConfigureAwait(false);
+                }
+                else if (_settings.LobbyOptions.LobbyMethod == LobbyMethodOptions.OpenLobby)
+                {
+                    // Hit empty raid limit and OpenLobby mode enabled, make it free for all
+                    code = "Free For All";
+                    Log($"Empty raid limit reached ({_settings.LobbyOptions.EmptyRaidLimit}). Opening coded raid to all.");
+                }
+                else
+                {
+                    // Hit empty raid limit but not in OpenLobby mode, still use code
+                    code = await GetRaidCode(token).ConfigureAwait(false);
+                }
             }
             else
             {
-                // If it's a "Free For All", set the code as such
-                code = "Free For All";
+                // Raid is configured as uncoded - no code needed
+                code = string.Empty;
             }
 
             // Apply delay only if the raid was added by RA command, not a Mystery Shiny Raid, and has a code
             if (_settings.ActiveRaids[RotationCount].AddedByRACommand &&
                 _settings.ActiveRaids[RotationCount].Title != "Mystery Shiny Raid" &&
-                code != "Free For All")
+                !string.IsNullOrEmpty(code) && code != "Free For All")
             {
                 await Task.Delay((int)_settings.EmbedToggles.RequestEmbedTime, token).ConfigureAwait(false);
             }

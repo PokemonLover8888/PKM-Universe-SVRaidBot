@@ -355,3 +355,7 @@ MigrationBackup/
 .ionide/
 SysBot.Pokemon/SV/BotEncounter/EncounterBotSettings.cs
 SysBot.Pokemon/SV/BotEncounter/EncounterBotReset.cs
+
+# Claude Code files
+.claude/
+CLAUDE.md
