@@ -130,7 +130,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 return;
             }
 
-            if (_settings.ActiveRaids.Count < 1)
+            if (NoActiveRaids)
             {
                 Log("No active raids configured. Default shiny raids will be added once game data is initialized.");
                 // Continue execution instead of returning
@@ -613,7 +613,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                             continue;
                         }
 
-                        if (_settings.ActiveRaids.Count < 1)
+                        if (NoActiveRaids)
                         {
                             await InsertDefaultShinyRaids(token).ConfigureAwait(false);
                         }
@@ -1822,6 +1822,28 @@ namespace SysBot.Pokemon.SV.BotRaid
         }
 
         /// <summary>
+        /// Checks if there are no active raids in the rotation
+        /// </summary>
+        private bool NoActiveRaids => _settings.ActiveRaids.Count == 0;
+
+        /// <summary>
+        /// Ensures RotationCount is within valid bounds
+        /// </summary>
+        private void EnsureRotationCountInBounds()
+        {
+            if (NoActiveRaids)
+            {
+                RotationCount = 0;
+                return;
+            }
+
+            if (RotationCount >= _settings.ActiveRaids.Count)
+            {
+                RotationCount = 0;
+            }
+        }
+
+        /// <summary>
         /// Checks if the current raid is a temporary raid (Mystery or User Requested) that should be removed after completion
         /// </summary>
         /// <returns>True if the raid is temporary and should be removed</returns>
@@ -1848,10 +1870,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 Log($"Raid for {_settings.ActiveRaids[RotationCount].Species} was {reason} and will be removed from the rotation list.");
                 _settings.ActiveRaids.RemoveAt(RotationCount);
-
-                // Adjust RotationCount if needed after removal
-                if (RotationCount >= _settings.ActiveRaids.Count)
-                    RotationCount = 0;
+                EnsureRotationCountInBounds();
             }
         }
 
@@ -1864,7 +1883,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 await Task.Delay(50, token).ConfigureAwait(false);
 
-                if (_settings.ActiveRaids.Count == 0)
+                if (NoActiveRaids)
                 {
                     Log("ActiveRaids is empty. Exiting SanitizeRotationCount.");
                     RotationCount = 0;
@@ -1904,11 +1923,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                     Log("Random rotation enabled. Selecting random raid.");
                     ProcessRandomRotation();
                     // Verify we got a valid rotation after random selection
-                    if (RotationCount >= _settings.ActiveRaids.Count)
-                    {
-                        Log($"Random rotation resulted in invalid index {RotationCount}. Resetting to 0.");
-                        RotationCount = 0;
-                    }
+                    EnsureRotationCountInBounds();
                 }
                 else
                 {
@@ -3403,7 +3418,7 @@ namespace SysBot.Pokemon.SV.BotRaid
         /// </summary>
         private Task UpdateRaidEmbedInfo(CancellationToken token)
         {
-            if (_settings.ActiveRaids.Count <= 0 || RotationCount >= _settings.ActiveRaids.Count)
+            if (NoActiveRaids || RotationCount >= _settings.ActiveRaids.Count)
                 return Task.CompletedTask;
             var currentRaid = _settings.ActiveRaids[RotationCount];
             string seedValue = currentRaid.Seed;
