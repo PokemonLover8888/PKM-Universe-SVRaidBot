@@ -4212,21 +4212,33 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 { "Paldea", FindNearestLocation(playerLocation, baseLocations) }
             };
 
-            var overallNearest = nearestDen.Select(kv =>
+            var overallNearest = nearestDen
+            .Where(kv => !string.IsNullOrEmpty(kv.Value))
+            .Select(kv =>
             {
-                var denLocationArray = kv.Key switch
+                Dictionary<string, int[]>? denLocations = kv.Key switch
                 {
-                    "Blueberry" => blueberryLocations[kv.Value],
-                    "Kitakami" => kitakamiLocations[kv.Value],
-                    "Paldea" => baseLocations[kv.Value],
-                    _ => throw new InvalidOperationException("Invalid region")
+                    "Blueberry" => blueberryLocations,
+                    "Kitakami" => kitakamiLocations,
+                    "Paldea" => baseLocations,
+                    _ => null
                 };
+
+                if (denLocations == null || !denLocations.TryGetValue(kv.Value, out var denLocationArray))
+                    return null;
 
                 var denLocationTuple = (denLocationArray[0], denLocationArray[1], denLocationArray[2]);
                 return new { Region = kv.Key, DenIdentifier = kv.Value, Distance = CalculateDistance(playerLocation, denLocationTuple) };
             })
-            .OrderBy(d => d.Distance)
-            .First();
+            .Where(x => x != null)
+            .OrderBy(d => d!.Distance)
+            .FirstOrDefault();
+
+            if (overallNearest == null)
+            {
+                Log("Unable to determine nearest den location - den location data may be corrupted or missing.");
+                return;
+            }
 
             TeraRaidMapParent mapType = overallNearest.Region switch
             {
