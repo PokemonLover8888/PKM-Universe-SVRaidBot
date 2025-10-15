@@ -830,6 +830,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                         await mentionedUser.SendMessageAsync(
                             $"The Raid Code for the private raid you were invited to by {user?.Username ?? "the host"} is **{code}**"
                         ).ConfigureAwait(false);
+                        await Task.Delay(300, token).ConfigureAwait(false);
                     }
                 }
                 catch (Discord.Net.HttpException ex)
@@ -2257,6 +2258,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                         foreach (var mentionedUser in mentionedUsers)
                         {
                             await mentionedUser.SendMessageAsync($"Get Ready! The raid you were invited to by {user?.Username ?? "the host"} is about to start!").ConfigureAwait(false);
+                            await Task.Delay(300, token).ConfigureAwait(false);
                         }
                     }
                     catch (Discord.Net.HttpException ex)
