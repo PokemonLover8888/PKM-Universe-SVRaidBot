@@ -4555,6 +4555,10 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             var allRaids = Container.Raids;
             var allEncounters = Container.Encounters;
             var allRewards = Container.Rewards;
+
+            if (string.IsNullOrEmpty(_denHexSeed))
+                return;
+
             uint denHexSeedUInt;
             denHexSeedUInt = uint.Parse(_denHexSeed, NumberStyles.AllowHexSpecifier);
             await FindSeedIndexInRaids(denHexSeedUInt, token);
@@ -4565,7 +4569,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
 
             int raidsToCheck = Math.Min(5, allRaids.Count);
 
-            if (!IsKitakami || !IsBlueberry)
+            if (!IsKitakami && !IsBlueberry)
             {
                 // check if new event species is found
                 for (int i = 0; i < raidsToCheck; i++)
