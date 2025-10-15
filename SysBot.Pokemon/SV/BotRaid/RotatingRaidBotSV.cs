@@ -1011,12 +1011,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             await HardStop().ConfigureAwait(false);
             await Task.Delay(2_000, t).ConfigureAwait(false);
 
-            if (!t.IsCancellationRequested)
-            {
-                Log("Restarting the inner loop.");
-                _isRecoveringFromReboot = true;
-                await InnerLoop(t).ConfigureAwait(false);
-            }
+            _isRecoveringFromReboot = true;
         }
 
         /// <summary>
