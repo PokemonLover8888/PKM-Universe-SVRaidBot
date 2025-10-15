@@ -1302,6 +1302,23 @@ namespace SysBot.Pokemon.SV.BotRaid
             // Remove completed temporary raids BEFORE advancing rotation
             RemoveTemporaryRaidIfNeeded("completed");
 
+            // Create replacement Mystery Raid BEFORE advancing rotation (if needed)
+            if (_settings.RaidSettings.MysteryRaids)
+            {
+                int mysteryRaidCount = _settings.ActiveRaids.Count(raid => raid.Title.Contains(MysteryRaidTitle));
+                if (mysteryRaidCount <= 1)
+                {
+                    try
+                    {
+                        CreateMysteryRaid();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Error in CreateMysteryRaid: {ex.Message}");
+                    }
+                }
+            }
+
             if (_settings.ActiveRaids.Count > 1)
             {
                 await SanitizeRotationCount(token).ConfigureAwait(false);
@@ -1718,13 +1735,6 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             // Insert the new raid at the determined position
             _settings.ActiveRaids.Insert(insertPosition, newRandomShinyRaid);
-
-            // Adjust RotationCount if the insertion shifted the current raid
-            if (insertPosition <= RotationCount)
-            {
-                RotationCount++;
-                Log($"Adjusted RotationCount to {RotationCount} after Mystery Raid insertion at position {insertPosition}.");
-            }
 
             Log($"Added Mystery Raid - Species: {(Species)pk.Species}, Seed: {seedValue}.");
         }
@@ -4067,21 +4077,6 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             _lostRaid = 0;
             await Task.Delay(2_000, token).ConfigureAwait(false);
             await LogPlayerLocation(token);
-            if (_settings.RaidSettings.MysteryRaids)
-            {
-                int mysteryRaidCount = _settings.ActiveRaids.Count(raid => raid.Title.Contains(MysteryRaidTitle));
-                if (mysteryRaidCount <= 1)
-                {
-                    try
-                    {
-                        CreateMysteryRaid();
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"Error in CreateMysteryRaid: {ex.Message}");
-                    }
-                }
-            }
         }
 
         /// <summary>
