@@ -1955,7 +1955,11 @@ namespace SysBot.Pokemon.SV.BotRaid
                     RotationCount = (RotationCount + 1) % _settings.ActiveRaids.Count;
                 }
 
-                Log($"Next raid in the list: {_settings.ActiveRaids[RotationCount].Species} (RotationCount: {RotationCount}, Previous: {previousRotationCount}).");
+                var nextRaid = _settings.ActiveRaids[RotationCount];
+                string raidIdentifier = nextRaid.Title.Contains(MysteryRaidTitle)
+                    ? nextRaid.Title
+                    : nextRaid.Species.ToString();
+                Log($"Next raid in the list: {raidIdentifier} (RotationCount: {RotationCount}, Previous: {previousRotationCount}).");
             }
             catch (Exception ex)
             {
