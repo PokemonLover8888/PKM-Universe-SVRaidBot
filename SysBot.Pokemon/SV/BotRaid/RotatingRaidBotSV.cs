@@ -4071,7 +4071,19 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
 
             using var reader = new StreamReader(stream);
             string json = reader.ReadToEnd();
-            return JsonConvert.DeserializeObject<Dictionary<string, float[]>>(json) ?? [];
+            var denLocations = JsonConvert.DeserializeObject<Dictionary<string, float[]>>(json) ?? [];
+
+            // Validate all coordinate arrays have exactly 3 elements (X, Y, Z)
+            foreach (var kvp in denLocations)
+            {
+                if (kvp.Value.Length != 3)
+                {
+                    throw new InvalidOperationException(
+                        $"Invalid den location data in {resourceName}: Den '{kvp.Key}' has {kvp.Value.Length} coordinates but expected 3 (X, Y, Z)");
+                }
+            }
+
+            return denLocations;
         }
 
         /// <summary>
