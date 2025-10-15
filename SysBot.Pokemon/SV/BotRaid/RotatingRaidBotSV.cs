@@ -616,6 +616,12 @@ namespace SysBot.Pokemon.SV.BotRaid
                         if (NoActiveRaids)
                         {
                             await InsertDefaultShinyRaids(token).ConfigureAwait(false);
+
+                            if (NoActiveRaids)
+                            {
+                                Log("Failed to generate any raids. Cannot continue - please check your configuration and try again.");
+                                return;
+                            }
                         }
 
                         Log($"Preparing parameter for {_settings.ActiveRaids[RotationCount].Species}");
