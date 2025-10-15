@@ -1763,9 +1763,13 @@ namespace SysBot.Pokemon.SV.BotRaid
                 var teraTypeLine = lines.FirstOrDefault(l => l.StartsWith("**TeraType:**"));
                 if (teraTypeLine != null)
                 {
-                    var teraType = teraTypeLine.Split(':')[1].Trim();
-                    teraType = teraType.Replace("*", "").Trim();
-                    return teraType;
+                    var parts = teraTypeLine.Split(':');
+                    if (parts.Length >= 2)
+                    {
+                        var teraType = parts[1].Trim();
+                        teraType = teraType.Replace("*", "").Trim();
+                        return teraType;
+                    }
                 }
             }
             return "Fairy"; // Default value if something goes wrong
