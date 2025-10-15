@@ -2584,6 +2584,8 @@ namespace SysBot.Pokemon.SV.BotRaid
             Log($"Raid #{_raidCount} is starting!");
             if (_emptyRaid != 0)
                 _emptyRaid = 0;
+            if (_lostRaid != 0)
+                _lostRaid = 0;
 
             return (true, lobbyTrainers);
         }
