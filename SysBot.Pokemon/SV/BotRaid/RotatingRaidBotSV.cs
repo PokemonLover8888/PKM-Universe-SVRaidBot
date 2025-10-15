@@ -3005,9 +3005,6 @@ namespace SysBot.Pokemon.SV.BotRaid
             if (description.Length > 4096)
                 description = description[..4096];
 
-            if (_emptyRaid == _settings.LobbyOptions.EmptyRaidLimit && _settings.LobbyOptions.LobbyMethod == LobbyMethodOptions.OpenLobby)
-                _emptyRaid = 0;
-
             if (disband) // Wait for trainer to load before disband
                 await Task.Delay(5_000, token).ConfigureAwait(false);
 
