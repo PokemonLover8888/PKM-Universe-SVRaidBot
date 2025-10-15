@@ -1898,7 +1898,9 @@ namespace SysBot.Pokemon.SV.BotRaid
 
                 // Store the current raid to verify we're actually advancing
                 int previousRotationCount = RotationCount;
-                string previousSpecies = _settings.ActiveRaids[RotationCount].Species.ToString();
+                var previousRaid = _settings.ActiveRaids[RotationCount];
+                string previousSpecies = previousRaid.Species.ToString();
+                bool previousWasPriorityRaid = previousRaid.AddedByRACommand;
 
                 // Always advance to next raid (this fixes the replay issue)
                 int nextEnabledRaidIndex = FindNextEnabledRaidIndex((RotationCount + 1) % _settings.ActiveRaids.Count);
@@ -1923,22 +1925,43 @@ namespace SysBot.Pokemon.SV.BotRaid
                 // Assign the next rotation
                 RotationCount = nextEnabledRaidIndex;
 
-                // Handle random rotation - must be checked BEFORE priority raids
+                // Handle random rotation
                 if (_settings.RaidSettings.RandomRotation)
                 {
                     Log("Random rotation enabled. Selecting random raid.");
                     ProcessRandomRotation();
-                    // Verify we got a valid rotation after random selection
                     EnsureRotationCountInBounds();
+
+                    // Update RaidUpNext for the next raid
+                    for (int i = 0; i < _settings.ActiveRaids.Count; i++)
+                    {
+                        _settings.ActiveRaids[i].RaidUpNext = i == RotationCount;
+                    }
+
+                    // Mark first run as complete
+                    if (_firstRun)
+                    {
+                        _firstRun = false;
+                    }
+
+                    var randomRaid = _settings.ActiveRaids[RotationCount];
+                    string randomRaidIdentifier = randomRaid.Title.Contains(MysteryRaidTitle)
+                        ? randomRaid.Title
+                        : randomRaid.Species.ToString();
+                    Log($"Next raid in the list: {randomRaidIdentifier} (RotationCount: {RotationCount}, Previous: {previousRotationCount}).");
+                    return;
                 }
-                else
+
+                // Check for priority raids (RA commands take precedence) - only in sequential mode
+                // Skip priority check if we just finished a priority raid (prevents loops)
+                if (!previousWasPriorityRaid)
                 {
-                    // Check for priority raids (RA commands take precedence) - only in sequential mode
                     int nextPriorityIndex = FindNextPriorityRaidIndex(RotationCount, _settings.ActiveRaids);
                     if (nextPriorityIndex != -1 && nextPriorityIndex != RotationCount)
                     {
                         Log($"Priority raid found at index {nextPriorityIndex}. Switching from {RotationCount}.");
                         RotationCount = nextPriorityIndex;
+                        EnsureRotationCountInBounds();
                     }
                 }
 
@@ -1954,12 +1977,8 @@ namespace SysBot.Pokemon.SV.BotRaid
                     _firstRun = false;
                 }
 
-                // Verify we're not stuck on the same raid (unless there's only 1 raid)
-                if (_settings.ActiveRaids.Count > 1 && RotationCount == previousRotationCount)
-                {
-                    Log($"WARNING: Rotation count did not advance from {previousRotationCount} ({previousSpecies}). Forcing advancement.");
-                    RotationCount = (RotationCount + 1) % _settings.ActiveRaids.Count;
-                }
+                // Final bounds check before accessing the raid
+                EnsureRotationCountInBounds();
 
                 var nextRaid = _settings.ActiveRaids[RotationCount];
                 string raidIdentifier = nextRaid.Title.Contains(MysteryRaidTitle)
@@ -2002,32 +2021,32 @@ namespace SysBot.Pokemon.SV.BotRaid
 
             int count = raids.Count;
 
-            // First, check for user-requested RA command raids
-            for (int i = 0; i < count; i++)
+            // Priority 1: Check for user-requested RA command raids (highest priority)
+            for (int i = 1; i <= count; i++)
             {
                 int index = (currentRotationCount + i) % count;
                 RotatingRaidParameters raid = raids[index];
                 if (raid.ActiveInRotation && raid.AddedByRACommand && !raid.Title.Contains(MysteryRaidTitle))
                 {
-                    return index; // Prioritize user-requested raids
+                    return index; // Prioritize user-requested raids first
                 }
             }
 
-            // Next, check for Mystery Shiny Raids if enabled
+            // Priority 2: Check for Mystery Shiny Raids (if no user requests found)
             if (_settings.RaidSettings.MysteryRaids)
             {
-                for (int i = 0; i < count; i++)
+                for (int i = 1; i <= count; i++)
                 {
                     int index = (currentRotationCount + i) % count;
                     RotatingRaidParameters raid = raids[index];
                     if (raid.ActiveInRotation && raid.Title.Contains(MysteryRaidTitle))
                     {
-                        return index; // Only consider Mystery Shiny Raids after user-requested raids
+                        return index; // Prioritize Mystery Shiny Raids over configured raids
                     }
                 }
             }
 
-            // Return current rotation count if no priority raids are found
+            // Return -1 if no priority raids are found
             return -1;
         }
 
