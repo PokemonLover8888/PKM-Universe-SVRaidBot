@@ -4442,6 +4442,23 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             // Remove skipped temporary raids BEFORE advancing rotation
             RemoveTemporaryRaidIfNeeded("skipped");
 
+            // Create replacement Mystery Raid BEFORE advancing rotation (if needed)
+            if (_settings.RaidSettings.MysteryRaids)
+            {
+                int mysteryRaidCount = _settings.ActiveRaids.Count(raid => raid.Title.Contains(MysteryRaidTitle));
+                if (mysteryRaidCount <= 1)
+                {
+                    try
+                    {
+                        CreateMysteryRaid();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Error in CreateMysteryRaid: {ex.Message}");
+                    }
+                }
+            }
+
             await SanitizeRotationCount(token).ConfigureAwait(false);
             await EnqueueEmbed(null, "", false, false, true, false, token).ConfigureAwait(false);
             await CloseGame(_hub.Config, token).ConfigureAwait(false);
