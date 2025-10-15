@@ -4227,7 +4227,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             .Where(kv => !string.IsNullOrEmpty(kv.Value))
             .Select(kv =>
             {
-                Dictionary<string, int[]>? denLocations = kv.Key switch
+                Dictionary<string, float[]>? denLocations = kv.Key switch
                 {
                     "Blueberry" => blueberryLocations,
                     "Kitakami" => kitakamiLocations,
