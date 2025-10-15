@@ -4573,7 +4573,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             bool newEventSpeciesFound = false;
             var (distGroupIDs, mightGroupIDs) = GetPossibleGroups(Container);
 
-            int raidsToCheck = Math.Min(5, allRaids.Count);
+            int raidsToCheck = Math.Min(5, Math.Min(allRaids.Count, allEncounters.Count));
 
             if (!IsKitakami && !IsBlueberry)
             {
@@ -4597,7 +4597,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 }
             }
 
-            for (int i = 0; i < allRaids.Count; i++)
+            int maxRaidIndex = Math.Min(allRaids.Count, allEncounters.Count);
+            for (int i = 0; i < maxRaidIndex; i++)
             {
                 if (newEventSpeciesFound)
                 {
