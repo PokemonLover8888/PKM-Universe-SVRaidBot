@@ -1719,6 +1719,13 @@ namespace SysBot.Pokemon.SV.BotRaid
             // Insert the new raid at the determined position
             _settings.ActiveRaids.Insert(insertPosition, newRandomShinyRaid);
 
+            // Adjust RotationCount if the insertion shifted the current raid
+            if (insertPosition <= RotationCount)
+            {
+                RotationCount++;
+                Log($"Adjusted RotationCount to {RotationCount} after Mystery Raid insertion at position {insertPosition}.");
+            }
+
             Log($"Added Mystery Raid - Species: {(Species)pk.Species}, Seed: {seedValue}.");
         }
 
