@@ -25,6 +25,44 @@ using SysBot.Pokemon.SV.BotRaid.Language;
 
 namespace SysBot.Pokemon.SV.BotRaid
 {
+    public class RaidCountStorage
+    {
+        private readonly string filePath;
+
+        public RaidCountStorage(string baseDirectory)
+        {
+            var directoryPath = Path.Combine(baseDirectory, "RaidData");
+            Directory.CreateDirectory(directoryPath);
+            filePath = Path.Combine(directoryPath, "raidcount.json");
+
+            if (!File.Exists(filePath))
+            {
+                File.WriteAllText(filePath, JsonConvert.SerializeObject(new RaidCountData(), Formatting.Indented));
+            }
+        }
+
+        public RaidCountData LoadRaidCounts()
+        {
+            var json = File.ReadAllText(filePath);
+            return JsonConvert.DeserializeObject<RaidCountData>(json) ?? new RaidCountData();
+        }
+
+        public void SaveRaidCounts(RaidCountData data)
+        {
+            var json = JsonConvert.SerializeObject(data, Formatting.Indented);
+            File.WriteAllText(filePath, json);
+        }
+    }
+
+    public class RaidCountData
+    {
+        public int TotalRaids { get; set; } = 0;
+        public int Wins { get; set; } = 0;
+        public int Losses { get; set; } = 0;
+        public long TotalUptimeMinutes { get; set; } = 0;
+        public long LastRaidTimestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    }
+
     /// <summary>
     /// Automated bot for hosting rotating raids in Pokemon Scarlet and Violet
     /// </summary>
@@ -67,6 +105,8 @@ namespace SysBot.Pokemon.SV.BotRaid
         private int _winCount;
         private int _lossCount;
         private int _seedIndexToReplace = -1;
+        private RaidCountStorage? raidStorage;
+        private RaidCountData? raidCountData;
         public static GameProgress GameProgress { get; private set; }
         public static bool? CurrentSpawnsEnabled { get; private set; }
         private int _storyProgress;
@@ -163,6 +203,17 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 Log("Identifying trainer data of the host console.");
                 _hostSAV = await IdentifyTrainer(token).ConfigureAwait(false);
+
+                raidStorage = new RaidCountStorage(AppDomain.CurrentDomain.BaseDirectory);
+                raidCountData = raidStorage.LoadRaidCounts();
+
+                _raidCount = raidCountData.TotalRaids;
+                _winCount = raidCountData.Wins;
+                _lossCount = raidCountData.Losses;
+
+                raidCountData.LastRaidTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                raidStorage.SaveRaidCounts(raidCountData);
+
                 await InitializeHardware(_settings, token).ConfigureAwait(false);
                 Log("Starting main RotatingRaidBot loop.");
                 await InnerLoop(token).ConfigureAwait(false);
@@ -1506,16 +1557,37 @@ namespace SysBot.Pokemon.SV.BotRaid
                 {
                     Log("Yay! We defeated the raid!");
                     _winCount++;
+                    if (raidCountData != null) raidCountData.Wins++;
                 }
                 else
                 {
                     Log("Dang, we lost the raid.");
                     _lossCount++;
+                    if (raidCountData != null) raidCountData.Losses++;
                 }
+                if (raidCountData != null) raidCountData.TotalRaids++;
+                UpdateUptime();
+                if (raidCountData != null) raidStorage?.SaveRaidCounts(raidCountData);
             }
             else
             {
                 Log("No trainers available to check win/loss status.");
+            }
+        }
+
+        private void UpdateUptime()
+        {
+            if (raidCountData == null || raidStorage == null) return;
+
+            long currentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            long elapsedMinutes = (currentTime - raidCountData.LastRaidTimestamp) / 60;
+
+            if (elapsedMinutes > 0)
+            {
+                raidCountData.TotalUptimeMinutes += elapsedMinutes;
+                raidCountData.LastRaidTimestamp = currentTime;
+                raidStorage.SaveRaidCounts(raidCountData);
+                Log($"Uptime updated! Total uptime: {raidCountData.TotalUptimeMinutes} minutes.");
             }
         }
 
@@ -3357,8 +3429,8 @@ namespace SysBot.Pokemon.SV.BotRaid
                 string programIconUrl = $"https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/icon4.png";
                 int raidsIn_currentRaidIndex = _hub.Config.RotatingRaidSV.ActiveRaids.Count(r => !r.AddedByRACommand);
 
-                // Calculate uptime
-                TimeSpan uptime = DateTime.Now - StartTime;
+                // Calculate uptime from persistent storage
+                TimeSpan uptime = TimeSpan.FromMinutes(raidCountData?.TotalUptimeMinutes ?? 0);
 
                 // Format day/hour/minute labels with appropriate localization
                 string dayLabel = uptime.Days == 1
