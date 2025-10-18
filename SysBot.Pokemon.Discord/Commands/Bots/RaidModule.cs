@@ -498,7 +498,7 @@ namespace SysBot.Pokemon.Discord.Commands.Bots
             [Summary("User Mention 2 (Optional)")] SocketGuildUser? user2 = null,
             [Summary("User Mention 3 (Optional)")] SocketGuildUser? user3 = null)
         {
-            var botPrefix = SysCord<T>.Runner.Config.Discord.CommandPrefix;
+            var botPrefix = SysCord<T>.Runner.Config.Discord.CommandPrefix.FirstOrDefault() ?? "$";
             if (Hub.Config.RotatingRaidSV.RaidSettings.DisableRequests)
             {
                 await ReplyAsync("Raid Requests are currently disabled by the host.").ConfigureAwait(false);

@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using System.Linq;
 using static SysBot.Pokemon.RotatingRaidSettingsSV;
 
 namespace SysBot.Pokemon
@@ -18,8 +19,22 @@ namespace SysBot.Pokemon
         [Category(Startup), Description("Bot login token.")]
         public string Token { get; set; } = string.Empty;
 
-        [Category(Startup), Description("Bot command prefix.")]
-        public string CommandPrefix { get; set; } = "$";
+        [Category(Startup), Description("List of bot command prefixes")]
+        public System.Collections.Generic.List<string> CommandPrefix { get; set; } = new System.Collections.Generic.List<string> { "$" };
+
+        public void EnsureCommandPrefix()
+        {
+            if (CommandPrefix.Count == 0)
+            {
+                CommandPrefix.Add("$"); // Default prefix if none is set
+            }
+
+            // If CommandPrefix is a single string, make it a list
+            if (CommandPrefix.Count == 1 && CommandPrefix[0].Contains(","))
+            {
+                CommandPrefix = CommandPrefix[0].Split(",").ToList();
+            }
+        }
 
         [Category(Startup), Description("Toggle to handle commands asynchronously or synchronously.")]
         public bool AsyncCommands { get; set; }

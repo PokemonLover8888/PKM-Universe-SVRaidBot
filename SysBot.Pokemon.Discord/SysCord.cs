@@ -379,13 +379,21 @@ namespace SysBot.Pokemon.Discord
             if (msg.Author.Id == _client.CurrentUser.Id || msg.Author.IsBot)
                 return;
 
-            // Create a number to track where the prefix ends and the command begins
-            int pos = 0;
-            if (msg.HasStringPrefix(Hub.Config.Discord.CommandPrefix, ref pos))
+            // Get the list of prefixes from the configuration
+            var prefixes = Hub.Config.Discord.CommandPrefix;
+            if (prefixes == null || !prefixes.Any())
+                return; // No prefixes defined
+
+            // Check if the message starts with any of the defined prefixes
+            int pos = -1;
+            foreach (var prefix in prefixes)
             {
-                bool handled = await TryHandleCommandAsync(msg, pos).ConfigureAwait(false);
-                if (handled)
-                    return;
+                if (msg.HasStringPrefix(prefix, ref pos))
+                {
+                    bool handled = await TryHandleCommandAsync(msg, pos).ConfigureAwait(false);
+                    if (handled)
+                        return;
+                }
             }
         }
 
