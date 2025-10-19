@@ -2731,9 +2731,6 @@ namespace SysBot.Pokemon.SV.BotRaid
         {
             var data = await SwitchConnection.PointerPeek(6, Offsets.TeraRaidCodePointer, token).ConfigureAwait(false);
             var code = Encoding.ASCII.GetString(data);
-            _teraRaidCode = _settings.EmbedToggles.RaidCodeCase == RaidCodeCaseOptions.Uppercase
-                ? code.ToUpper()
-                : code.ToLower();
             return $"{_teraRaidCode}";
         }
 
