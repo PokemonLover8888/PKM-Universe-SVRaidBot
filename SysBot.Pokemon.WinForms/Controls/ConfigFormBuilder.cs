@@ -307,6 +307,9 @@ public static class ConfigFormBuilder
             BackColor = Color.Transparent,
             Cursor = Cursors.Hand,
         };
+        var (friendlyName, friendlyDesc, icon) = FriendlyCategory(category);
+        header.Height = string.IsNullOrEmpty(friendlyDesc) ? 40 : 52;
+
         var caret = new Label
         {
             Text = state.Expanded ? "▼" : "▶",
@@ -314,24 +317,51 @@ public static class ConfigFormBuilder
             Font = new Font("Segoe UI", 9F),
             AutoSize = false,
             Width = 20,
-            Height = 36,
-            Location = new Point(0, 6),
+            Height = 24,
+            Location = new Point(0, 8),
+            TextAlign = ContentAlignment.MiddleCenter,
+            BackColor = Color.Transparent,
+        };
+        var iconLbl = new Label
+        {
+            Text = icon,
+            ForeColor = Gold,
+            Font = new Font("Segoe UI Emoji", 11F),
+            AutoSize = false,
+            Width = 26,
+            Height = 24,
+            Location = new Point(22, 6),
             TextAlign = ContentAlignment.MiddleCenter,
             BackColor = Color.Transparent,
         };
         var title = new Label
         {
-            Text = $"{category.ToUpperInvariant()}  ·  {props.Count}",
+            Text = $"{friendlyName}   ·  {props.Count}",
             ForeColor = Gold,
-            Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+            Font = new Font("Segoe UI", 11.5F, FontStyle.Bold),
             AutoSize = false,
-            Location = new Point(24, 6),
+            Location = new Point(50, 4),
             Width = 600,
-            Height = 28,
+            Height = 24,
             BackColor = Color.Transparent,
         };
         header.Controls.Add(title);
+        header.Controls.Add(iconLbl);
         header.Controls.Add(caret);
+        if (!string.IsNullOrEmpty(friendlyDesc))
+        {
+            header.Controls.Add(new Label
+            {
+                Text = friendlyDesc,
+                ForeColor = TextMuted,
+                Font = new Font("Segoe UI", 8.5F),
+                AutoSize = false,
+                Location = new Point(50, 28),
+                Width = 620,
+                Height = 18,
+                BackColor = Color.Transparent,
+            });
+        }
 
         void Toggle()
         {
@@ -679,6 +709,30 @@ public static class ConfigFormBuilder
     {
         var attr = p.GetCustomAttribute<CategoryAttribute>();
         return string.IsNullOrEmpty(attr?.Category) ? "General" : attr!.Category;
+    }
+
+    /// <summary>
+    /// Maps the bot's code-y category names to friendly (name, description, icon) for display.
+    /// Unknown categories fall back to a humanized version of the raw name.
+    /// </summary>
+    private static (string Name, string Desc, string Icon) FriendlyCategory(string raw)
+    {
+        switch (raw.ToLowerInvariant())
+        {
+            case "botraid":       return ("Raid Bot",        "Bot name and the main rotating-raid settings.",            "⚡");
+            case "debug":         return ("Debug",           "Developer toggles — usually leave these alone.",            "🛠");
+            case "featuretoggle": return ("Feature Toggles", "Anti-idle, logging, and log retention.",                    "🔧");
+            case "integration":   return ("Integrations",    "Discord connection: token, channels, roles, region routing.","🔗");
+            case "operation":     return ("Operation",       "Switch timing tweaks and legality generation.",             "⚙");
+            case "startup":       return ("Startup",          "Token, prefix, and how the bot boots.",                    "🚀");
+            case "roles":         return ("Roles",            "Which Discord roles can request raids / control the bot.", "👤");
+            case "users":         return ("Users",            "Sudo users and the blacklist.",                            "🧑");
+            case "channels":      return ("Channels",         "Echo, logging, leaderboard, and region raid channels.",    "💬");
+            case "hosting":       return ("Hosting",          "How raids rotate and host.",                               "📡");
+            case "mysteryraids":  return ("Mystery Raids",    "Random shiny raid injection settings.",                    "✨");
+            case "general":       return ("General",          "Uncategorized settings.",                                  "📋");
+            default:              return (Humanize(raw),      string.Empty,                                               "•");
+        }
     }
 
     private static string GetDisplayName(PropertyInfo p)
