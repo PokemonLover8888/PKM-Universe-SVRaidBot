@@ -51,29 +51,6 @@ This fork keeps everything hexbyte's SVRaidBot does and adds a PKM Universe laye
 
 ---
 
-# 📱 Access from Any Device on Your Network
-
-## Quick Setup
-
-### 1. Enable Network Access (choose one):
-- **Option A:** Right-click `PKM-Universe-Raid.exe` → Run as Administrator
-- **Option B:** Run in admin cmd: `netsh http add urlacl url=http://+:9090/ user=Everyone`
-
-### 2. Allow Through Firewall:
-```cmd
-netsh advfirewall firewall add rule name="Raid-SV Web" dir=in action=allow protocol=TCP localport=9090
-```
-
-### 3. Connect From Your Phone:
-- Get your PC's IP: `ipconfig` (look for IPv4 Address)
-- On your phone: `http://YOUR-PC-IP:9090`
-- Example: `http://192.168.1.100:9090`
-
-## Requirements
-- Same WiFi network · Windows Firewall rule (step 2) · Admin rights (first time only)
-
----
-
 # Features
 
 ## Auto Teleport
