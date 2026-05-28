@@ -493,12 +493,43 @@ public static class ConfigFormBuilder
 
         if (t == typeof(string))
         {
-            var tb = MakeTextBox((string?)value ?? string.Empty, 480);
-            if (prop.Name.IndexOf("token", StringComparison.OrdinalIgnoreCase) >= 0)
-                tb.UseSystemPasswordChar = true;
+            bool isSecret = prop.Name.IndexOf("token", StringComparison.OrdinalIgnoreCase) >= 0
+                         || prop.Name.IndexOf("apikey", StringComparison.OrdinalIgnoreCase) >= 0
+                         || prop.Name.IndexOf("password", StringComparison.OrdinalIgnoreCase) >= 0;
+            var tb = MakeTextBox((string?)value ?? string.Empty, isSecret ? 440 : 480);
             if (!prop.CanWrite) tb.Enabled = false;
             else tb.TextChanged += (s, e) => SafeSet(prop, target, tb.Text);
-            return tb;
+
+            if (!isSecret)
+                return tb;
+
+            // Secret field (token / API key): mask it + add a Show/Hide reveal toggle.
+            tb.UseSystemPasswordChar = true;
+            tb.Dock = DockStyle.Left;
+            var holder = new Panel { AutoSize = false, Height = 30, Width = 540, BackColor = Color.Transparent };
+            var reveal = new Button
+            {
+                Text = "Show",
+                Dock = DockStyle.Right,
+                Width = 64,
+                Height = 28,
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Gold,
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9F),
+            };
+            reveal.FlatAppearance.BorderColor = GoldDim;
+            reveal.FlatAppearance.BorderSize = 1;
+            reveal.FlatAppearance.MouseOverBackColor = HoverBg;
+            reveal.Click += (s, e) =>
+            {
+                tb.UseSystemPasswordChar = !tb.UseSystemPasswordChar;
+                reveal.Text = tb.UseSystemPasswordChar ? "Show" : "Hide";
+            };
+            holder.Controls.Add(tb);
+            holder.Controls.Add(reveal);
+            return holder;
         }
 
         // Collections — Edit list dialog
