@@ -51,7 +51,9 @@ public static class RaidBlurbService
                 generationConfig = new { temperature = 0.9, maxOutputTokens = 80 }
             };
 
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={apiKey}";
+            // gemini-flash-latest — verified working on the PKM Universe key; the pinned
+            // 2.0-flash / 2.0-flash-lite models 429 (free-tier limit 0) on this project.
+            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={apiKey}";
             using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             using var resp = await Http.PostAsync(url, content, token).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
