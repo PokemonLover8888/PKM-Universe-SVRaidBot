@@ -1267,14 +1267,47 @@ namespace SysBot.Pokemon.WinForms
             };
 
             // Style the input control
+            Control inputToAdd = input;
             if (input is TextBox tb)
             {
                 tb.BackColor = Color.FromArgb(18, 18, 18);
                 tb.ForeColor = Color.FromArgb(0xE8, 0xE8, 0xE8);
                 tb.BorderStyle = BorderStyle.FixedSingle;
                 tb.Font = new Font("Segoe UI", 11F);
-                tb.Dock = DockStyle.Top;
                 tb.Height = 32;
+
+                // Masked field (token/key): wrap with a Show/Hide reveal toggle.
+                if (tb.UseSystemPasswordChar)
+                {
+                    tb.Dock = DockStyle.Fill;
+                    var holder = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = Color.Transparent };
+                    var reveal = new Button
+                    {
+                        Text = "Show",
+                        Dock = DockStyle.Right,
+                        Width = 70,
+                        FlatStyle = FlatStyle.Flat,
+                        ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                        BackColor = Color.Transparent,
+                        Cursor = Cursors.Hand,
+                        Font = new Font("Segoe UI", 9F),
+                    };
+                    reveal.FlatAppearance.BorderColor = Color.FromArgb(0x6A, 0x55, 0x22);
+                    reveal.FlatAppearance.BorderSize = 1;
+                    reveal.FlatAppearance.MouseOverBackColor = Color.FromArgb(0x1F, 0x1F, 0x1F);
+                    reveal.Click += (s, e) =>
+                    {
+                        tb.UseSystemPasswordChar = !tb.UseSystemPasswordChar;
+                        reveal.Text = tb.UseSystemPasswordChar ? "Show" : "Hide";
+                    };
+                    holder.Controls.Add(tb);     // Fill — takes remaining width
+                    holder.Controls.Add(reveal); // Right — 70px button
+                    inputToAdd = holder;
+                }
+                else
+                {
+                    tb.Dock = DockStyle.Top;
+                }
             }
             else if (input is NumericUpDown nud)
             {
@@ -1297,7 +1330,7 @@ namespace SysBot.Pokemon.WinForms
             }
 
             // Reverse-insert so docked Top order is label / help / input
-            row.Controls.Add(input);
+            row.Controls.Add(inputToAdd);
             row.Controls.Add(helpLbl);
             row.Controls.Add(labelLbl);
             return row;
