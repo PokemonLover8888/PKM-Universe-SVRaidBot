@@ -276,22 +276,6 @@ namespace SysBot.Pokemon.Discord
                         message = await c.SendMessageAsync("", false, embed.Build(), components: components).ConfigureAwait(false);
                     }
 
-                    // Best-effort auto-thread under the raid post. Only on real text channels (not DMs/voice).
-                    if (message != null && c is ITextChannel textChannel)
-                    {
-                        try
-                        {
-                            await textChannel.CreateThreadAsync(
-                                name: "Strategy chat",
-                                autoArchiveDuration: ThreadArchiveDuration.OneHour,
-                                message: message).ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            // Threads might be disabled for the channel — non-fatal.
-                            LogUtil.LogInfo($"Auto-thread skipped: {ex.Message}", nameof(RaidEmbedWithComponentsAsync));
-                        }
-                    }
                     return message!;
                 }
                 catch (Exception ex)
