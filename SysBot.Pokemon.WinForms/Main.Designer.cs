@@ -55,6 +55,7 @@ namespace SysBot.Pokemon.WinForms
             // Sidebar Components
             logoPanel = new Panel();
             navButtonsPanel = new FlowLayoutPanel();
+            btnNavDashboard = new Button();
             btnNavBots = new Button();
             btnNavHub = new Button();
             btnNavLogs = new Button();
@@ -122,7 +123,7 @@ namespace SysBot.Pokemon.WinForms
             Icon = Resources.icon;
             Name = "Main";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "RaidBot Control Center";
+            Text = "Raid-SV — PKM Universe Raid System";
             FormClosing += Main_FormClosing;
             Shown += Main_Shown;
             DoubleBuffered = true;
@@ -157,8 +158,12 @@ namespace SysBot.Pokemon.WinForms
 
             // Sidebar Panel
             sidebarPanel.BackColor = Color.FromArgb(18, 18, 18);
+            // ORDER MATTERS for Dock=Bottom siblings: the FIRST-added gets the outer (bottom-most) edge.
+            // So sidebarBottomPanel is added FIRST → sits at the very bottom (CHECK FOR UPDATES).
+            // statusPillsPanel is added next → sits above the bottom panel.
             sidebarPanel.Controls.Add(navButtonsPanel);
             sidebarPanel.Controls.Add(sidebarBottomPanel);
+            sidebarPanel.Controls.Add(BuildStatusPillsPanel());
             sidebarPanel.Controls.Add(logoPanel);
             sidebarPanel.Dock = DockStyle.Fill;
             sidebarPanel.Location = new Point(0, 0);
@@ -180,6 +185,7 @@ namespace SysBot.Pokemon.WinForms
 
             // Navigation Buttons Panel
             navButtonsPanel.AutoSize = false;
+            navButtonsPanel.Controls.Add(btnNavDashboard);
             navButtonsPanel.Controls.Add(btnNavBots);
             navButtonsPanel.Controls.Add(btnNavHub);
             navButtonsPanel.Controls.Add(btnNavLogs);
@@ -194,7 +200,8 @@ namespace SysBot.Pokemon.WinForms
             navButtonsPanel.TabIndex = 1;
             navButtonsPanel.BackColor = Color.Transparent;
 
-            // Navigation Button Style
+            // Navigation Button Style (Dashboard added as index 3, custom icon)
+            ConfigureNavButton(btnNavDashboard, "DASHBOARD", 3, "Live raid view");
             ConfigureNavButton(btnNavBots, "BOTS", 0, "Manage bot connections");
             ConfigureNavButton(btnNavHub, "CONFIGURATION", 1, "System settings");
             ConfigureNavButton(btnNavLogs, "SYSTEM LOGS", 2, "View activity logs");
@@ -364,6 +371,8 @@ namespace SysBot.Pokemon.WinForms
 
             // Content Panel
             contentPanel.BackColor = Color.FromArgb(28, 28, 28);
+            BuildDashboardPanel();
+            contentPanel.Controls.Add(dashboardPanel!);
             contentPanel.Controls.Add(botsPanel);
             contentPanel.Controls.Add(hubPanel);
             contentPanel.Controls.Add(logsPanel);
@@ -397,7 +406,7 @@ namespace SysBot.Pokemon.WinForms
             titleLabel.Name = "titleLabel";
             titleLabel.Size = new Size(250, 45);
             titleLabel.TabIndex = 0;
-            titleLabel.Text = "Bot Management";
+            titleLabel.Text = "Dashboard";
 
             // Control Buttons Panel
             controlButtonsPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -415,11 +424,11 @@ namespace SysBot.Pokemon.WinForms
             controlButtonsPanel.BackColor = Color.Transparent;
             controlButtonsPanel.WrapContents = false;
 
-            // Control Buttons
-            ConfigureControlButton(btnStart, "START ALL", Color.FromArgb(87, 242, 135)); // #57f287
-            ConfigureControlButton(btnStop, "STOP ALL", Color.FromArgb(237, 66, 69)); // #ed4245
-            ConfigureControlButton(btnReboot, "REBOOT", Color.FromArgb(88, 101, 242)); // #5865f2
-            ConfigureControlButton(btnRefreshMap, "REFRESH MAP", Color.FromArgb(254, 231, 92)); // #fee75c
+            // Control Buttons — PKM Universe gold theme
+            ConfigureControlButton(btnStart, "START ALL", Color.FromArgb(0xD4, 0xAF, 0x37));     // primary gold (most used)
+            ConfigureControlButton(btnStop, "STOP ALL", Color.FromArgb(0x8B, 0x2C, 0x2C));        // muted red (semantic danger, on-brand)
+            ConfigureControlButton(btnReboot, "REBOOT", Color.FromArgb(0x4A, 0x3D, 0x1E));        // dark gold neutral
+            ConfigureControlButton(btnRefreshMap, "REFRESH MAP", Color.FromArgb(0x4A, 0x3D, 0x1E)); // dark gold neutral
 
             btnStart.Click += B_Start_Click;
             btnStop.Click += B_Stop_Click;
@@ -436,7 +445,7 @@ namespace SysBot.Pokemon.WinForms
             botsPanel.Padding = new Padding(40);
             botsPanel.Size = new Size(1020, 620);
             botsPanel.TabIndex = 0;
-            botsPanel.Visible = true;
+            botsPanel.Visible = false; // Dashboard is the default landing page now
 
             // Bot Header Panel
             botHeaderPanel.BackColor = Color.FromArgb(35, 35, 35);
@@ -520,48 +529,94 @@ namespace SysBot.Pokemon.WinForms
             FLP_Bots.WrapContents = false;
             FLP_Bots.Resize += FLP_Bots_Resize;
 
-            // Hub Panel
+            // Hub Panel (Configuration page) — Discord-style inner sidebar
             hubPanel.BackColor = Color.Transparent;
-            hubPanel.Controls.Add(PG_Hub);
             hubPanel.Dock = DockStyle.Fill;
             hubPanel.Location = new Point(0, 100);
             hubPanel.Name = "hubPanel";
-            hubPanel.Padding = new Padding(40);
+            hubPanel.Padding = new Padding(28);
             hubPanel.Size = new Size(1020, 620);
             hubPanel.TabIndex = 1;
             hubPanel.Visible = false;
 
-            // Property Grid Container
-            var pgContainer = new Panel();
-            pgContainer.BackColor = Color.FromArgb(35, 35, 35);
-            pgContainer.Dock = DockStyle.Fill;
-            pgContainer.Location = new Point(40, 40);
-            pgContainer.Name = "pgContainer";
-            pgContainer.Padding = new Padding(2);
-            pgContainer.Size = new Size(940, 540);
-            CreateRoundedPanel(pgContainer);
-            hubPanel.Controls.Add(pgContainer);
+            // Inner sidebar (left) — section nav within the Configuration page
+            configInnerSidebar = new Panel
+            {
+                BackColor = Color.FromArgb(15, 15, 15),
+                Dock = DockStyle.Left,
+                Width = 200,
+                Padding = new Padding(0, 16, 0, 16),
+                Name = "configInnerSidebar",
+            };
+            CreateRoundedPanel(configInnerSidebar);
 
-            // Property Grid
-            PG_Hub.BackColor = Color.FromArgb(35, 35, 35);
-            PG_Hub.CategoryForeColor = Color.FromArgb(224, 224, 224);
-            PG_Hub.CategorySplitterColor = Color.FromArgb(50, 50, 50);
-            PG_Hub.CommandsBackColor = Color.FromArgb(35, 35, 35);
-            PG_Hub.CommandsForeColor = Color.FromArgb(224, 224, 224);
-            PG_Hub.Dock = DockStyle.Fill;
-            PG_Hub.Font = new Font("Segoe UI", 9F);
-            PG_Hub.HelpBackColor = Color.FromArgb(35, 35, 35);
-            PG_Hub.HelpForeColor = Color.FromArgb(176, 176, 176);
-            PG_Hub.LineColor = Color.FromArgb(50, 50, 50);
-            PG_Hub.Location = new Point(2, 2);
-            PG_Hub.Name = "PG_Hub";
-            PG_Hub.PropertySort = PropertySort.Categorized;
-            PG_Hub.Size = new Size(936, 536);
-            PG_Hub.TabIndex = 0;
-            PG_Hub.ToolbarVisible = false;
-            PG_Hub.ViewBackColor = Color.FromArgb(28, 28, 28);
-            PG_Hub.ViewForeColor = Color.FromArgb(224, 224, 224);
-            pgContainer.Controls.Add(PG_Hub);
+            var sidebarHeader = new Label
+            {
+                Text = "SETTINGS",
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 34,
+                Padding = new Padding(20, 12, 0, 0),
+                BackColor = Color.Transparent,
+            };
+
+            var navFlow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = false,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0, 4, 0, 0),
+            };
+            configInnerSidebar.Controls.Add(navFlow);
+            configInnerSidebar.Controls.Add(sidebarHeader);
+
+            configSectionContent = new Panel
+            {
+                BackColor = Color.Transparent,
+                Dock = DockStyle.Fill,
+                Padding = new Padding(28, 16, 16, 16),
+                Name = "configSectionContent",
+                AutoScroll = false, // Each inner section handles its own scrolling — no nested scroll containers
+            };
+
+            // Build each section, all with Visible=false to start; one will be shown by first nav click
+            sectionPanels = new Dictionary<string, Panel>
+            {
+                { "General",  BuildConfigSection_General()  },
+                { "Discord",  BuildConfigSection_Discord()  },
+                { "Raids",    BuildConfigSection_Raids()    },
+                { "Embed",    BuildConfigSection_Embed()    },
+                { "Lobby",    BuildConfigSection_Lobby()    },
+                { "Advanced", BuildConfigSection_Advanced() },
+            };
+
+            foreach (var kv in sectionPanels)
+            {
+                kv.Value.Dock = DockStyle.Fill;
+                kv.Value.Visible = false;
+                configSectionContent.Controls.Add(kv.Value);
+            }
+
+            // Build nav buttons (added in reverse so flow order matches map order)
+            foreach (var key in new[] { "General", "Discord", "Raids", "Embed", "Lobby", "Advanced" })
+            {
+                var btn = MakeConfigNavButton(key);
+                navFlow.Controls.Add(btn);
+            }
+
+            hubPanel.Controls.Add(configSectionContent);
+            hubPanel.Controls.Add(configInnerSidebar);
+
+            // Show General by default
+            SwitchConfigSection("General");
+
+            // PG_Hub kept as a field for compatibility with code that calls PG_Hub.Refresh(),
+            // but it's NEVER added to the form — the Advanced section now uses ConfigFormBuilder.
+            // We give it a parent-less existence so .Refresh() calls remain no-ops without throwing.
+            PG_Hub.Name = "PG_Hub_unused";
 
             // Logs Panel
             logsPanel.BackColor = Color.Transparent;
@@ -774,7 +829,7 @@ namespace SysBot.Pokemon.WinForms
         {
             // Configure tray icon
             trayIcon.Icon = Icon;
-            trayIcon.Text = (Config?.Hub?.BotName != null && !string.IsNullOrEmpty(Config.Hub.BotName)) ? Config.Hub.BotName : "S/V RaidBot";
+            trayIcon.Text = (Config?.Hub?.BotName != null && !string.IsNullOrEmpty(Config.Hub.BotName)) ? Config.Hub.BotName : "Raid-SV";
             trayIcon.Visible = false;
             trayIcon.DoubleClick += (s, e) => ShowFromTray();
 
@@ -901,6 +956,7 @@ namespace SysBot.Pokemon.WinForms
                     0 => "\uE77B", // Robot icon for Bots
                     1 => "\uE713", // Settings icon for Configuration
                     2 => "\uE7C3", // Document icon for Logs
+                    3 => "\uE9D9", // Gauge / dashboard icon
                     _ => "\uE700"  // Default icon
                 };
 
@@ -940,15 +996,16 @@ namespace SysBot.Pokemon.WinForms
                     0 => "Bot Management",
                     1 => "Configuration",
                     2 => "System Logs",
-                    _ => "RaidBot"
+                    3 => "Dashboard",
+                    _ => "Raid-SV"
                 };
             };
 
             // Configure hover animation
             ConfigureHoverAnimation(btn);
 
-            // Set initial selection
-            if (index == 0)
+            // Set initial selection — DASHBOARD is the default landing view
+            if (index == 3)
             {
                 btn.BackColor = Color.FromArgb(30, 30, 30);
                 btn.ForeColor = Color.FromArgb(224, 224, 224);
@@ -962,7 +1019,9 @@ namespace SysBot.Pokemon.WinForms
             btn.FlatAppearance.BorderSize = 0;
             btn.FlatStyle = FlatStyle.Flat;
             btn.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
-            btn.ForeColor = Color.FromArgb(28, 28, 28); // Dark text on bright buttons
+            // Pick text color by perceived luminance: light text on dark bg, dark text on bright bg.
+            double luminance = (0.299 * baseColor.R + 0.587 * baseColor.G + 0.114 * baseColor.B) / 255.0;
+            btn.ForeColor = luminance > 0.55 ? Color.FromArgb(28, 28, 28) : Color.FromArgb(0xE8, 0xC2, 0x52); // dark text or gold-light
             btn.Margin = new Padding(5, 0, 5, 0);
             btn.Name = $"btn{text.Replace(" ", "")}";
             btn.Padding = new Padding(5, 0, 5, 0);
@@ -977,6 +1036,1312 @@ namespace SysBot.Pokemon.WinForms
 
             // Configure glow effect
             ConfigureGlowButton(btn);
+        }
+
+        // -------- Configuration page section nav helpers --------
+
+        private Button MakeConfigNavButton(string section)
+        {
+            var btn = new Button
+            {
+                Text = section.ToUpperInvariant(),
+                Tag = section,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(0xB0, 0xB0, 0xB0),
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(24, 0, 0, 0),
+                Width = 196,
+                Height = 42,
+                Margin = new Padding(0),
+                Cursor = Cursors.Hand,
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(28, 28, 28);
+            btn.FlatAppearance.MouseDownBackColor = Color.FromArgb(35, 35, 35);
+            btn.Click += (s, e) => SwitchConfigSection(section);
+            configNavButtons[section] = btn;
+            return btn;
+        }
+
+        private bool advancedFormBuilt = false;
+        private void SwitchConfigSection(string section)
+        {
+            currentConfigSection = section;
+            foreach (var kv in sectionPanels)
+                kv.Value.Visible = (kv.Key == section);
+            foreach (var kv in configNavButtons)
+            {
+                bool active = (kv.Key == section);
+                kv.Value.ForeColor = active ? Color.FromArgb(0xD4, 0xAF, 0x37) : Color.FromArgb(0xB0, 0xB0, 0xB0);
+                kv.Value.BackColor = active ? Color.FromArgb(28, 28, 28) : Color.Transparent;
+                kv.Value.Font = new Font("Segoe UI", 10F, active ? FontStyle.Bold : FontStyle.Regular);
+            }
+
+            // LAZY: build the Advanced reflection form only on first visit. Subsequent visits reuse it.
+            if (section == "Advanced" && !advancedFormBuilt && advancedFormHost != null && RunningEnvironment?.Config != null)
+            {
+                advancedFormBuilt = true;
+                SysBot.Pokemon.WinForms.Controls.ConfigFormBuilder.BuildFormFor(RunningEnvironment.Config, advancedFormHost);
+            }
+        }
+
+        // -------- Section content builders --------
+        // Each returns a Panel that lives inside configSectionContent (Dock=Fill, Visible toggled by nav).
+        // We use the section-header + field-row pattern; styling is centralized in MakeFieldRow.
+
+        private Panel BuildConfigSection_General()
+        {
+            var p = NewSectionPanel("General", "Basic identity and behavior.");
+            qsBotName = new TextBox();
+            qsGameStatus = new TextBox();
+            p.Controls.Add(MakeFieldRow(
+                "Bot Display Name",
+                "Shown in the window title bar and in the status-patrol JSON. Helps you tell instances apart.",
+                qsBotName));
+            p.Controls.Add(MakeFieldRow(
+                "Bot Game Status",
+                "The 'Playing …' line shown under your bot's Discord name. Pure flavor.",
+                qsGameStatus));
+            return p;
+        }
+
+        private Panel BuildConfigSection_Discord()
+        {
+            var p = NewSectionPanel("Discord", "Connecting the bot to your Discord server.");
+            qsDiscordToken = new TextBox { UseSystemPasswordChar = true };
+            qsCommandPrefix = new TextBox();
+            p.Controls.Add(MakeFieldRow(
+                "Bot Token",
+                "From the Discord Developer Portal. Don't share. Hidden by default.",
+                qsDiscordToken));
+            p.Controls.Add(MakeFieldRow(
+                "Command Prefix",
+                "What you type before commands. Default: ! (so $ trade-bot commands don't clash).",
+                qsCommandPrefix));
+            return p;
+        }
+
+        private Panel BuildConfigSection_Raids()
+        {
+            var p = NewSectionPanel("Raids", "How and when raids get hosted.");
+            qsTotalRaids = new NumericUpDown { Minimum = 0, Maximum = 100000, Value = 0 };
+            qsRotateRandom = new CheckBox { Text = "Shuffle the raid order each cycle", AutoSize = true };
+            qsKeepDaySeed = new CheckBox { Text = "Keep the in-game day seed locked (prevents raid reroll)", AutoSize = true };
+            p.Controls.Add(MakeFieldRow(
+                "Total Raids Before Stopping",
+                "0 = run forever (recommended for 24/7 hosting). Any positive number caps the session.",
+                qsTotalRaids));
+            p.Controls.Add(MakeFieldRow(
+                "Rotate Raid List in Random Order",
+                "On = pick a random raid from the list each time. Off = go in order top to bottom.",
+                qsRotateRandom));
+            p.Controls.Add(MakeFieldRow(
+                "Keep Current Day Seed",
+                "On = freeze the game's day so raid seeds stay deterministic. Recommended ON.",
+                qsKeepDaySeed));
+            return p;
+        }
+
+        private Panel BuildConfigSection_Embed()
+        {
+            var p = NewSectionPanel("Embed", "How your raid posts look in Discord.");
+            qsHideRaidCode = new CheckBox { Text = "Hide code from public embed (DM via reaction instead)", AutoSize = true };
+            qsUseScreenshots = new CheckBox { Text = "Attach an in-game screenshot to each raid post", AutoSize = true };
+            p.Controls.Add(MakeFieldRow(
+                "Raid Code Privacy",
+                "ON: users react ✅ to the embed and get the code in DM. OFF: code appears in the post for anyone.",
+                qsHideRaidCode));
+            p.Controls.Add(MakeFieldRow(
+                "Use Screenshots",
+                "Adds visual confirmation of the in-game raid to each Discord post. Slight performance cost.",
+                qsUseScreenshots));
+            return p;
+        }
+
+        private Panel BuildConfigSection_Lobby()
+        {
+            var p = NewSectionPanel("Lobby", "How the bot acts inside the in-game raid lobby.");
+            var note = new Label
+            {
+                Text = "Lobby behavior knobs (button-mash speed, retry limits, A-button mode) live in the Advanced section for now.",
+                ForeColor = Color.FromArgb(0x8A, 0x8A, 0x8A),
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Italic),
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Height = 60,
+                Padding = new Padding(0, 12, 0, 0),
+                BackColor = Color.Transparent,
+            };
+            p.Controls.Add(note);
+            return p;
+        }
+
+        private Panel advancedFormHost = null!;
+        private Panel BuildConfigSection_Advanced()
+        {
+            // For the Advanced section we DON'T want the outer section to scroll —
+            // ConfigFormBuilder's own contentArea handles scrolling internally.
+            // Nested AutoScroll panels caused the top category to clip.
+            var p = NewSectionPanel("Advanced", "Every knob the bot exposes. Most people never come in here.", autoScroll: false);
+            advancedFormHost = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                AutoScroll = false,
+                Padding = new Padding(0, 6, 0, 6),
+                Name = "advancedFormHost",
+            };
+            p.Controls.Add(advancedFormHost);
+            return p;
+        }
+
+        private Panel NewSectionPanel(string title, string subtitle, bool autoScroll = true)
+        {
+            var p = new Panel { BackColor = Color.Transparent, AutoScroll = autoScroll };
+            var header = new Label
+            {
+                Text = title.ToUpperInvariant(),
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                Font = new Font("Segoe UI", 16F, FontStyle.Bold),
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Height = 36,
+                BackColor = Color.Transparent,
+            };
+            var sub = new Label
+            {
+                Text = subtitle,
+                ForeColor = Color.FromArgb(0x8A, 0x8A, 0x8A),
+                Font = new Font("Segoe UI", 10F),
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Height = 32,
+                BackColor = Color.Transparent,
+            };
+            var divider = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = Color.FromArgb(40, 40, 40),
+                Margin = new Padding(0, 4, 0, 14),
+            };
+            // Reverse insert so docked Top order matches code order
+            p.Controls.Add(divider);
+            p.Controls.Add(sub);
+            p.Controls.Add(header);
+            return p;
+        }
+
+        private Panel MakeFieldRow(string label, string helpText, Control input)
+        {
+            var row = new Panel
+            {
+                BackColor = Color.Transparent,
+                Dock = DockStyle.Top,
+                Padding = new Padding(0, 14, 0, 14),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            };
+
+            var labelLbl = new Label
+            {
+                Text = label,
+                ForeColor = Color.FromArgb(0xE0, 0xE0, 0xE0),
+                Font = new Font("Segoe UI", 10.5F, FontStyle.Bold),
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Height = 24,
+                BackColor = Color.Transparent,
+            };
+            var helpLbl = new Label
+            {
+                Text = helpText,
+                ForeColor = Color.FromArgb(0x8A, 0x8A, 0x8A),
+                Font = new Font("Segoe UI", 9F),
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Height = 32,
+                BackColor = Color.Transparent,
+            };
+
+            // Style the input control
+            if (input is TextBox tb)
+            {
+                tb.BackColor = Color.FromArgb(18, 18, 18);
+                tb.ForeColor = Color.FromArgb(0xE8, 0xE8, 0xE8);
+                tb.BorderStyle = BorderStyle.FixedSingle;
+                tb.Font = new Font("Segoe UI", 11F);
+                tb.Dock = DockStyle.Top;
+                tb.Height = 32;
+            }
+            else if (input is NumericUpDown nud)
+            {
+                nud.BackColor = Color.FromArgb(18, 18, 18);
+                nud.ForeColor = Color.FromArgb(0xE8, 0xE8, 0xE8);
+                nud.BorderStyle = BorderStyle.FixedSingle;
+                nud.Font = new Font("Segoe UI", 11F);
+                nud.Dock = DockStyle.Top;
+                nud.Height = 32;
+                nud.Width = 200;
+            }
+            else if (input is CheckBox cb)
+            {
+                cb.ForeColor = Color.FromArgb(0xE0, 0xE0, 0xE0);
+                cb.Font = new Font("Segoe UI", 10F);
+                cb.BackColor = Color.Transparent;
+                cb.FlatStyle = FlatStyle.Flat;
+                cb.Dock = DockStyle.Top;
+                cb.Height = 26;
+            }
+
+            // Reverse-insert so docked Top order is label / help / input
+            row.Controls.Add(input);
+            row.Controls.Add(helpLbl);
+            row.Controls.Add(labelLbl);
+            return row;
+        }
+
+        // ===========================================================
+        //   PHASE 2: DASHBOARD VIEW
+        // ===========================================================
+
+        private void BuildDashboardPanel()
+        {
+            dashboardPanel = new Panel
+            {
+                BackColor = Color.Transparent,
+                Dock = DockStyle.Fill,
+                Location = new Point(0, 100),
+                Size = new Size(1020, 620),
+                Padding = new Padding(28),
+                Name = "dashboardPanel",
+                Visible = true, // Default landing view
+            };
+
+            // Right rail: Live Feed (320 wide, full height)
+            var rail = new Panel
+            {
+                BackColor = Color.FromArgb(20, 20, 20),
+                Dock = DockStyle.Right,
+                Width = 320,
+                Padding = new Padding(18, 14, 18, 14),
+            };
+            var railHeader = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 32,
+                BackColor = Color.Transparent,
+            };
+            railHeader.Controls.Add(new Label
+            {
+                Text = "LIVE FEED",
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                AutoSize = false,
+                Dock = DockStyle.Left,
+                Width = 200,
+                BackColor = Color.Transparent,
+            });
+            railHeader.Controls.Add(new Label
+            {
+                Text = "● LIVE",
+                ForeColor = Color.FromArgb(0x4A, 0xDE, 0x80),
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                AutoSize = false,
+                Dock = DockStyle.Right,
+                Width = 60,
+                TextAlign = ContentAlignment.MiddleRight,
+                BackColor = Color.Transparent,
+            });
+            dashLiveFeed = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0, 8, 0, 0),
+            };
+            rail.Controls.Add(dashLiveFeed);
+            rail.Controls.Add(railHeader);
+
+            // Left main: hero card on top + 3 cards below
+            var mainArea = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0, 0, 18, 0),
+                AutoScroll = true,
+            };
+
+            // 3 secondary cards row (bottom of main area)
+            var bottomCards = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 200,
+                ColumnCount = 3,
+                RowCount = 1,
+                BackColor = Color.Transparent,
+            };
+            bottomCards.ColumnStyles.Clear();
+            bottomCards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34));
+            bottomCards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
+            bottomCards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
+            bottomCards.Controls.Add(BuildDashboardCard("QUEUE", out dashQueueList,
+                "No raids queued yet.\nAdd one via BOTS → ADD BOT,\nor use !ra <seed> in Discord."), 0, 0);
+            bottomCards.Controls.Add(BuildStatsCard(), 1, 0);
+            bottomCards.Controls.Add(BuildConnectionCard(), 2, 0);
+
+            // Hero card (top of main area)
+            var heroCard = BuildDashboardHeroCard();
+
+            mainArea.Controls.Add(bottomCards);
+            mainArea.Controls.Add(heroCard);
+
+            dashboardPanel.Controls.Add(mainArea);
+            dashboardPanel.Controls.Add(rail);
+
+            // Demo button — bottom-right of dashboard. Fakes a 60s raid so you can see the UI come alive
+            // without needing an actual Switch + raid running.
+            var demoBtn = new Button
+            {
+                Text = "▶  Run 60s Demo",
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                BackColor = Color.Transparent,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Width = 160,
+                Height = 30,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                Location = new Point(dashboardPanel.Width - 340 - 180, dashboardPanel.Height - 50),
+            };
+            demoBtn.FlatAppearance.BorderColor = Color.FromArgb(0x6A, 0x55, 0x22);
+            demoBtn.FlatAppearance.BorderSize = 1;
+            demoBtn.FlatAppearance.MouseOverBackColor = Color.FromArgb(0x1F, 0x1F, 0x1F);
+            demoBtn.Click += (s, e) => _ = RunDashboardDemoAsync();
+            dashboardPanel.Controls.Add(demoBtn);
+            demoBtn.BringToFront();
+
+            // Seed initial live feed entries
+            PopulateInitialLiveFeed();
+
+            // Subscribe to live raid events — bot emits via DashboardState.Emit(), we pipe to the rail.
+            SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.LiveEventOccurred += (icon, body, when) =>
+            {
+                AddLiveFeedEntry(icon, body, when);
+            };
+
+            // Poll DashboardState every 1 second so the hero card / stats / timer stay current.
+            var pollTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+            pollTimer.Tick += (s, e) =>
+            {
+                if (dashboardPanel != null && dashboardPanel.Visible)
+                    RefreshDashboard();
+            };
+            pollTimer.Start();
+        }
+
+        private TableLayoutPanel? dashHeroBody;
+        private Panel? dashEmptyState;
+        private float dashPulsePhase = 0f;
+        private System.Windows.Forms.Timer? dashAnimTimer;
+        private Panel? dashTimerRing;
+        private Panel? dashJoinedDotsPanel;
+        private Panel? dashStatsSparkline;
+        private float dashTimerProgress = 0f;   // 0..1 — how much of the timer ring is filled (1 = full time left)
+        private int dashTotalJoined = 0;
+        private int dashTotalCapacity = 4;
+        private float[] dashSparklineData = new float[] { 0.2f, 0.3f, 0.25f, 0.45f, 0.4f, 0.55f, 0.5f, 0.7f, 0.65f, 0.8f, 0.75f, 0.9f };
+
+        private Panel BuildDashboardHeroCard()
+        {
+            var hero = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 320,
+                BackColor = Color.FromArgb(0x10, 0x10, 0x10),
+                Padding = new Padding(28, 22, 28, 22),
+                Margin = new Padding(0, 0, 0, 18),
+            };
+            // Subtle radial gradient + top gold accent line
+            hero.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var path = new GraphicsPath())
+                {
+                    path.AddEllipse(-200, -260, hero.Width + 400, 700);
+                    using var brush = new PathGradientBrush(path)
+                    {
+                        CenterColor = Color.FromArgb(40, 0xD4, 0xAF, 0x37),
+                        SurroundColors = new[] { Color.FromArgb(0, 0xD4, 0xAF, 0x37) },
+                    };
+                    e.Graphics.FillRectangle(brush, 0, 0, hero.Width, hero.Height);
+                }
+                using var pen = new Pen(Color.FromArgb(0xD4, 0xAF, 0x37), 2);
+                e.Graphics.DrawLine(pen, 0, 0, hero.Width, 0);
+            };
+
+            var heroLabel = new Label
+            {
+                Text = "CURRENTLY HOSTING",
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 22,
+                BackColor = Color.Transparent,
+            };
+
+            // Empty state — centered animated Pokeball + pulsing "WAITING FOR RAID"
+            dashEmptyState = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Visible = true,
+            };
+            dashEmptyState.Paint += DrawEmptyState_Paint;
+
+            // 3-column body: sprite | pokemon info | code & timer (only visible when raid live)
+            dashHeroBody = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 1,
+                BackColor = Color.Transparent,
+                Visible = false,
+            };
+            dashHeroBody.ColumnStyles.Clear();
+            dashHeroBody.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));
+            dashHeroBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            dashHeroBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            var heroBody = dashHeroBody;
+
+            dashHeroSprite = new PictureBox
+            {
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0),
+            };
+            heroBody.Controls.Add(dashHeroSprite, 0, 0);
+
+            var infoCol = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Padding = new Padding(12, 0, 12, 0) };
+            dashHeroPokemonName = new Label
+            {
+                Text = "Waiting for raid…",
+                ForeColor = Color.FromArgb(0xE8, 0xE8, 0xE8),
+                Font = new Font("Segoe UI", 18F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 36,
+                BackColor = Color.Transparent,
+            };
+            dashHeroMeta = new Label
+            {
+                Text = "No bot connected. Add one in BOTS to begin.",
+                ForeColor = Color.FromArgb(0x8A, 0x8A, 0x8A),
+                Font = new Font("Segoe UI", 10F),
+                Dock = DockStyle.Top,
+                Height = 28,
+                BackColor = Color.Transparent,
+            };
+            dashHeroMoves = new Label
+            {
+                Text = "",
+                ForeColor = Color.FromArgb(0xE0, 0xE0, 0xE0),
+                Font = new Font("Segoe UI", 10F),
+                Dock = DockStyle.Top,
+                Height = 100,
+                BackColor = Color.Transparent,
+            };
+            infoCol.Controls.Add(dashHeroMoves);
+            infoCol.Controls.Add(dashHeroMeta);
+            infoCol.Controls.Add(dashHeroPokemonName);
+            heroBody.Controls.Add(infoCol, 1, 0);
+
+            // Code + Timer column
+            var actionCol = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Padding = new Padding(8, 0, 0, 0) };
+            var codeBlock = BuildHeroBlock("RAID CODE", "—", Color.FromArgb(0xD4, 0xAF, 0x37), out dashCodeValue);
+            codeBlock.Dock = DockStyle.Top;
+            codeBlock.Height = 90;
+            codeBlock.Margin = new Padding(0, 0, 0, 12);
+
+            // Timer block — circular gold progress ring around the text
+            var timerBlock = BuildTimerRingBlock(out dashTimerValue);
+            timerBlock.Dock = DockStyle.Top;
+            timerBlock.Height = 110;
+            dashTimerRing = timerBlock;
+
+            // Joined dots — actual drawn dots, filled/hollow based on join count
+            dashJoinedDotsPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 32,
+                BackColor = Color.Transparent,
+            };
+            dashJoinedDotsPanel.Paint += DrawJoinedDots_Paint;
+
+            // Keep a hidden Label so existing wiring code that references dashJoinedDots stays compiling
+            dashJoinedDots = new Label { Visible = false };
+
+            actionCol.Controls.Add(dashJoinedDotsPanel);
+            actionCol.Controls.Add(timerBlock);
+            actionCol.Controls.Add(codeBlock);
+            heroBody.Controls.Add(actionCol, 2, 0);
+
+            // Both states live inside the hero card; we toggle Visible on each
+            hero.Controls.Add(heroBody);
+            hero.Controls.Add(dashEmptyState!);
+            hero.Controls.Add(heroLabel);
+
+            // Drive pulse animation (12fps is plenty for this)
+            dashAnimTimer = new System.Windows.Forms.Timer { Interval = 80 };
+            dashAnimTimer.Tick += (s, e) =>
+            {
+                dashPulsePhase = (dashPulsePhase + 0.08f) % (float)(Math.PI * 2);
+                if (dashEmptyState != null && dashEmptyState.Visible)
+                    dashEmptyState.Invalidate();
+            };
+            dashAnimTimer.Start();
+
+            return hero;
+        }
+
+        /// <summary>Timer block with a circular gold progress ring drawn around the value text.</summary>
+        private Panel BuildTimerRingBlock(out Label valueLabel)
+        {
+            var block = new Panel
+            {
+                BackColor = Color.FromArgb(0x0A, 0x0A, 0x0A),
+                Padding = new Padding(0),
+            };
+            valueLabel = new Label
+            {
+                Text = "—:—",
+                ForeColor = Color.FromArgb(0x4A, 0xDE, 0x80),
+                Font = new Font("Cascadia Code", 18F, FontStyle.Bold),
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleCenter,
+            };
+            var hostedValueLabel = valueLabel;
+            block.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+                // Background outline (subtle dark border)
+                using var bgPen = new Pen(Color.FromArgb(28, 28, 28), 1);
+                e.Graphics.DrawRectangle(bgPen, 0, 0, block.Width - 1, block.Height - 1);
+
+                // Section label
+                using var labelFont = new Font("Segoe UI", 8F, FontStyle.Bold);
+                using var labelBrush = new SolidBrush(Color.FromArgb(0x8A, 0x8A, 0x8A));
+                e.Graphics.DrawString("TIME REMAINING", labelFont, labelBrush, 12, 6);
+
+                // Circular progress ring — centered on the right portion of the block
+                int ringSize = Math.Min(block.Height - 16, 90);
+                int ringX = block.Width - ringSize - 10;
+                int ringY = (block.Height - ringSize) / 2;
+
+                // Track (faint gold)
+                using (var trackPen = new Pen(Color.FromArgb(40, 0xD4, 0xAF, 0x37), 4))
+                    e.Graphics.DrawArc(trackPen, ringX, ringY, ringSize, ringSize, 0, 360);
+
+                // Progress fill
+                float progress = Math.Clamp(dashTimerProgress, 0f, 1f);
+                if (progress > 0.001f)
+                {
+                    Color progressColor = progress > 0.5f
+                        ? Color.FromArgb(0x4A, 0xDE, 0x80)
+                        : progress > 0.2f
+                            ? Color.FromArgb(0xFB, 0xBF, 0x24)
+                            : Color.FromArgb(0xF8, 0x71, 0x71);
+                    using var progPen = new Pen(progressColor, 4) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+                    e.Graphics.DrawArc(progPen, ringX, ringY, ringSize, ringSize, -90, 360 * progress);
+                }
+            };
+            block.Controls.Add(valueLabel);
+            return block;
+        }
+
+        /// <summary>Paint the joined-dots row: filled gold for joined trainers, hollow for empty slots.</summary>
+        private void DrawJoinedDots_Paint(object? sender, PaintEventArgs e)
+        {
+            if (sender is not Panel p) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            int dotSize = 14;
+            int gap = 8;
+            int totalW = (dotSize * dashTotalCapacity) + (gap * (dashTotalCapacity - 1));
+            int startX = (p.Width - totalW) / 2;
+            int y = (p.Height - dotSize) / 2;
+
+            for (int i = 0; i < dashTotalCapacity; i++)
+            {
+                int x = startX + i * (dotSize + gap);
+                if (i < dashTotalJoined)
+                {
+                    // Filled gold with subtle glow
+                    using var glow = new SolidBrush(Color.FromArgb(60, 0xD4, 0xAF, 0x37));
+                    e.Graphics.FillEllipse(glow, x - 2, y - 2, dotSize + 4, dotSize + 4);
+                    using var fill = new SolidBrush(Color.FromArgb(0xE8, 0xC2, 0x52));
+                    e.Graphics.FillEllipse(fill, x, y, dotSize, dotSize);
+                }
+                else
+                {
+                    // Hollow gold-faint ring
+                    using var ring = new Pen(Color.FromArgb(80, 0xD4, 0xAF, 0x37), 2);
+                    e.Graphics.DrawEllipse(ring, x, y, dotSize, dotSize);
+                }
+            }
+
+            // Label beneath
+            using var lblFont = new Font("Segoe UI", 8.5F);
+            using var lblBrush = new SolidBrush(Color.FromArgb(0x8A, 0x8A, 0x8A));
+            string label = $"{dashTotalJoined} of {dashTotalCapacity} joined";
+            var sz = e.Graphics.MeasureString(label, lblFont);
+            e.Graphics.DrawString(label, lblFont, lblBrush, (p.Width - sz.Width) / 2, y + dotSize + 2);
+        }
+
+        /// <summary>Paint a tiny sparkline trend chart for the stats card.</summary>
+        private void DrawStatsSparkline_Paint(object? sender, PaintEventArgs e)
+        {
+            if (sender is not Panel p) return;
+            if (dashSparklineData == null || dashSparklineData.Length < 2) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            float maxV = 1f;
+            foreach (var v in dashSparklineData) if (v > maxV) maxV = v;
+            float w = p.Width;
+            float h = p.Height - 2;
+            float dx = w / (dashSparklineData.Length - 1);
+
+            var pts = new PointF[dashSparklineData.Length];
+            for (int i = 0; i < dashSparklineData.Length; i++)
+            {
+                float nx = i * dx;
+                float ny = h - (dashSparklineData[i] / maxV) * (h - 4) + 2;
+                pts[i] = new PointF(nx, ny);
+            }
+
+            // Fill under the line (subtle gold)
+            using (var path = new GraphicsPath())
+            {
+                path.AddLines(pts);
+                path.AddLine(pts[^1].X, pts[^1].Y, pts[^1].X, h);
+                path.AddLine(pts[^1].X, h, pts[0].X, h);
+                path.CloseFigure();
+                using var areaBrush = new SolidBrush(Color.FromArgb(40, 0xD4, 0xAF, 0x37));
+                e.Graphics.FillPath(areaBrush, path);
+            }
+            // Line itself
+            using var linePen = new Pen(Color.FromArgb(0xE8, 0xC2, 0x52), 1.5f);
+            e.Graphics.DrawLines(linePen, pts);
+            // End-dot
+            using var dotBrush = new SolidBrush(Color.FromArgb(0xE8, 0xC2, 0x52));
+            e.Graphics.FillEllipse(dotBrush, pts[^1].X - 2.5f, pts[^1].Y - 2.5f, 5, 5);
+        }
+
+        /// <summary>Paint a stylized centered Pokeball + pulsing "WAITING FOR RAID" text for the empty state.</summary>
+        private void DrawEmptyState_Paint(object? sender, PaintEventArgs e)
+        {
+            if (sender is not Panel p) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+            // --- Pokeball ---
+            int size = 120;
+            int cx = p.Width / 2;
+            int cy = (p.Height / 2) - 22;
+            var rect = new Rectangle(cx - size / 2, cy - size / 2, size, size);
+
+            // Outer ring (gold faint)
+            float ringPulse = 0.5f + 0.5f * (float)Math.Sin(dashPulsePhase);
+            int ringAlpha = (int)(36 + 28 * ringPulse);
+            using (var ringPen = new Pen(Color.FromArgb(ringAlpha, 0xD4, 0xAF, 0x37), 2))
+                e.Graphics.DrawEllipse(ringPen, cx - size / 2 - 18, cy - size / 2 - 18, size + 36, size + 36);
+
+            // Top half (gold gradient)
+            using (var topPath = new GraphicsPath())
+            {
+                topPath.AddPie(rect, 180, 180);
+                using var topBrush = new LinearGradientBrush(
+                    new Rectangle(rect.X, rect.Y, rect.Width, rect.Height / 2),
+                    Color.FromArgb(0xE8, 0xC2, 0x52),
+                    Color.FromArgb(0xB8, 0x94, 0x1F),
+                    LinearGradientMode.Vertical);
+                e.Graphics.FillPath(topBrush, topPath);
+            }
+            // Bottom half (dark)
+            using (var botPath = new GraphicsPath())
+            {
+                botPath.AddPie(rect, 0, 180);
+                using var botBrush = new LinearGradientBrush(
+                    new Rectangle(rect.X, rect.Y + rect.Height / 2, rect.Width, rect.Height / 2),
+                    Color.FromArgb(0x28, 0x28, 0x28),
+                    Color.FromArgb(0x10, 0x10, 0x10),
+                    LinearGradientMode.Vertical);
+                e.Graphics.FillPath(botBrush, botPath);
+            }
+            // Center band
+            using (var bandBrush = new SolidBrush(Color.FromArgb(0x14, 0x14, 0x14)))
+                e.Graphics.FillRectangle(bandBrush, rect.X, rect.Y + rect.Height / 2 - 6, rect.Width, 12);
+            // Center button (pulsing gold)
+            int btnSize = 32;
+            int btnAlpha = (int)(140 + 100 * ringPulse);
+            using (var btnPath = new GraphicsPath())
+            {
+                btnPath.AddEllipse(cx - btnSize / 2, cy - btnSize / 2, btnSize, btnSize);
+                using var btnBrush = new SolidBrush(Color.FromArgb(0x10, 0x10, 0x10));
+                e.Graphics.FillPath(btnBrush, btnPath);
+                using var btnRing = new Pen(Color.FromArgb(btnAlpha, 0xE8, 0xC2, 0x52), 3);
+                e.Graphics.DrawPath(btnRing, btnPath);
+            }
+            // Outer ball outline
+            using (var outline = new Pen(Color.FromArgb(0xD4, 0xAF, 0x37), 2))
+                e.Graphics.DrawEllipse(outline, rect);
+
+            // --- Pulsing text ---
+            int textAlpha = (int)(140 + 80 * ringPulse);
+            using var titleFont = new Font("Segoe UI", 13F, FontStyle.Bold);
+            using var titleBrush = new SolidBrush(Color.FromArgb(textAlpha, 0xD4, 0xAF, 0x37));
+            string title = "WAITING FOR RAID";
+            var titleSize = e.Graphics.MeasureString(title, titleFont);
+            e.Graphics.DrawString(title, titleFont, titleBrush, cx - titleSize.Width / 2, cy + size / 2 + 18);
+
+            using var subFont = new Font("Segoe UI", 9F);
+            using var subBrush = new SolidBrush(Color.FromArgb(0x8A, 0x8A, 0x8A));
+            string sub = "Connect a bot in BOTS to begin hosting.";
+            var subSize = e.Graphics.MeasureString(sub, subFont);
+            e.Graphics.DrawString(sub, subFont, subBrush, cx - subSize.Width / 2, cy + size / 2 + 44);
+        }
+
+        private Panel BuildHeroBlock(string label, string value, Color valueColor, out Label valueLabel)
+        {
+            var block = new Panel
+            {
+                BackColor = Color.FromArgb(0x0A, 0x0A, 0x0A),
+                Padding = new Padding(12, 8, 12, 8),
+            };
+            block.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Color.FromArgb(60, 0xD4, 0xAF, 0x37), 1);
+                e.Graphics.DrawRectangle(pen, 0, 0, block.Width - 1, block.Height - 1);
+            };
+            var lbl = new Label
+            {
+                Text = label,
+                ForeColor = Color.FromArgb(0x8A, 0x8A, 0x8A),
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 16,
+                BackColor = Color.Transparent,
+            };
+            valueLabel = new Label
+            {
+                Text = value,
+                ForeColor = valueColor,
+                Font = new Font("Cascadia Code", 22F, FontStyle.Bold),
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                BackColor = Color.Transparent,
+            };
+            block.Controls.Add(valueLabel);
+            block.Controls.Add(lbl);
+            return block;
+        }
+
+        private Panel BuildStatsCard()
+        {
+            var card = new Panel
+            {
+                BackColor = Color.FromArgb(0x14, 0x14, 0x14),
+                Padding = new Padding(18, 14, 18, 14),
+                Margin = new Padding(4, 0, 4, 0),
+                Dock = DockStyle.Fill,
+            };
+            card.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Color.FromArgb(80, 0xD4, 0xAF, 0x37), 1);
+                e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+            };
+            var hdr = new Label
+            {
+                Text = "STATS",
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 22,
+                BackColor = Color.Transparent,
+            };
+            // Big primary number ("Completed")
+            var bigNum = new Label
+            {
+                Text = "0",
+                ForeColor = Color.FromArgb(0xE8, 0xC2, 0x52),
+                Font = new Font("Segoe UI", 36F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 60,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 0, 0, 0),
+            };
+            var bigSub = new Label
+            {
+                Text = "raids completed",
+                ForeColor = Color.FromArgb(0x8A, 0x8A, 0x8A),
+                Font = new Font("Segoe UI", 9F),
+                Dock = DockStyle.Top,
+                Height = 18,
+                BackColor = Color.Transparent,
+            };
+            // Sparkline panel (last-N raids trend)
+            dashStatsSparkline = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 28,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 6, 0, 0),
+            };
+            dashStatsSparkline.Paint += DrawStatsSparkline_Paint;
+
+            // Secondary breakdown
+            dashStatsValues = new Label
+            {
+                Text = "Wins      0\nLosses    0\nWin rate  —\nUptime    —",
+                ForeColor = Color.FromArgb(0xE0, 0xE0, 0xE0),
+                Font = new Font("Cascadia Mono", 9F),
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.TopLeft,
+                Padding = new Padding(0, 10, 0, 0),
+            };
+            // Reverse insert: header / big / sub / sparkline / breakdown
+            card.Controls.Add(dashStatsValues);
+            card.Controls.Add(dashStatsSparkline);
+            card.Controls.Add(bigSub);
+            card.Controls.Add(bigNum);
+            card.Controls.Add(hdr);
+            return card;
+        }
+
+        private Panel BuildConnectionCard()
+        {
+            var card = new Panel
+            {
+                BackColor = Color.FromArgb(0x14, 0x14, 0x14),
+                Padding = new Padding(18, 14, 18, 14),
+                Margin = new Padding(4, 0, 4, 0),
+                Dock = DockStyle.Fill,
+            };
+            card.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Color.FromArgb(80, 0xD4, 0xAF, 0x37), 1);
+                e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+            };
+            var hdr = new Label
+            {
+                Text = "CONNECTION",
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 22,
+                BackColor = Color.Transparent,
+            };
+            dashConnectionStatus = new Label
+            {
+                Text = "○  Switch       not connected\n○  Discord      not configured\n○  sys-botbase  unknown\nMode             —",
+                ForeColor = Color.FromArgb(0xE0, 0xE0, 0xE0),
+                Font = new Font("Cascadia Mono", 9F),
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.TopLeft,
+                Padding = new Padding(0, 6, 0, 0),
+            };
+            card.Controls.Add(dashConnectionStatus);
+            card.Controls.Add(hdr);
+            return card;
+        }
+
+        private Panel BuildDashboardCard(string title, out Label valueLabel, string initialBody)
+        {
+            var card = new Panel
+            {
+                BackColor = Color.FromArgb(0x14, 0x14, 0x14),
+                Padding = new Padding(18, 14, 18, 14),
+                Margin = new Padding(4, 0, 4, 0),
+                Dock = DockStyle.Fill,
+            };
+            card.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Color.FromArgb(80, 0xD4, 0xAF, 0x37), 1);
+                e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+            };
+            var hdr = new Label
+            {
+                Text = title,
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 22,
+                BackColor = Color.Transparent,
+            };
+            valueLabel = new Label
+            {
+                Text = initialBody,
+                ForeColor = Color.FromArgb(0xE0, 0xE0, 0xE0),
+                Font = new Font("Cascadia Mono", 9F),
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.TopLeft,
+            };
+            card.Controls.Add(valueLabel);
+            card.Controls.Add(hdr);
+            return card;
+        }
+
+        private void PopulateInitialLiveFeed()
+        {
+            if (dashLiveFeed == null) return;
+            AddLiveFeedEntry("·", "Waiting for activity — connect a bot to begin.", "—");
+        }
+
+        public void AddLiveFeedEntry(string icon, string text, string when)
+        {
+            if (dashLiveFeed == null) return;
+            void doIt()
+            {
+                var row = new Panel
+                {
+                    Width = dashLiveFeed.ClientSize.Width - 4,
+                    Height = 36,
+                    Margin = new Padding(0, 0, 0, 2),
+                    BackColor = Color.Transparent,
+                };
+                var icoLbl = new Label
+                {
+                    Text = icon,
+                    ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                    Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+                    Dock = DockStyle.Left,
+                    Width = 24,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    BackColor = Color.Transparent,
+                };
+                var bodyLbl = new Label
+                {
+                    Text = text,
+                    ForeColor = Color.FromArgb(0xE0, 0xE0, 0xE0),
+                    Font = new Font("Segoe UI", 9F),
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    BackColor = Color.Transparent,
+                };
+                var whenLbl = new Label
+                {
+                    Text = when,
+                    ForeColor = Color.FromArgb(0x8A, 0x8A, 0x8A),
+                    Font = new Font("Cascadia Mono", 8F),
+                    Dock = DockStyle.Right,
+                    Width = 50,
+                    TextAlign = ContentAlignment.MiddleRight,
+                    BackColor = Color.Transparent,
+                };
+                row.Controls.Add(bodyLbl);
+                row.Controls.Add(whenLbl);
+                row.Controls.Add(icoLbl);
+                dashLiveFeed.Controls.Add(row);
+                dashLiveFeed.Controls.SetChildIndex(row, 0); // newest on top
+                while (dashLiveFeed.Controls.Count > 30)
+                    dashLiveFeed.Controls.RemoveAt(dashLiveFeed.Controls.Count - 1);
+            }
+            if (dashLiveFeed.IsHandleCreated && dashLiveFeed.InvokeRequired)
+                dashLiveFeed.BeginInvoke((MethodInvoker)doIt);
+            else
+                doIt();
+        }
+
+        /// <summary>
+        /// Refresh dashboard live values. Phase 2a: best-effort polling from anywhere we can get state.
+        /// Phase 2b will hook to RotatingRaidBotSV's real fields.
+        /// </summary>
+        private void RefreshDashboard()
+        {
+            // Show empty state if no bot configured OR no active raid currently hosting.
+            var state = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.HasActiveRaid;
+            bool hasBot = Bots != null && Bots.Count > 0;
+            bool showHero = hasBot && state;
+
+            if (dashEmptyState != null) dashEmptyState.Visible = !showHero;
+            if (dashHeroBody  != null) dashHeroBody.Visible  =  showHero;
+
+            // Pull live values regardless — the cards (Stats/Connection/Queue) are always visible
+            // even without an active raid, so totals etc. should reflect current state.
+            var s = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.CompletedTotal;
+            var w = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.WinCount;
+            var l = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.LossCount;
+            var up = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.UptimeMinutes;
+            double winRate = s > 0 ? Math.Round((double)w / s * 100, 1) : 0;
+            string upStr = up >= 1440 ? $"{up / 1440}d {(up % 1440) / 60}h" : up >= 60 ? $"{up / 60}h {up % 60}m" : $"{up}m";
+            if (dashStatsValues != null)
+                dashStatsValues.Text = $"Wins      {w}\nLosses    {l}\nWin rate  {winRate}%\nUptime    {upStr}";
+
+            if (dashConnectionStatus != null)
+            {
+                string sw = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SwitchConnected ? "●" : "○";
+                string ds = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.DiscordConnected ? "●" : "○";
+                string sb = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SysBotBaseReady ? "●" : "○";
+                string ip = string.IsNullOrEmpty(SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SwitchIp) ? "—" : SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SwitchIp;
+                dashConnectionStatus.Text = $"{sw}  Switch       {ip}\n{ds}  Discord      {(SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.DiscordConnected ? "connected" : "not configured")}\n{sb}  sys-botbase  {(SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SysBotBaseReady ? "ready" : "unknown")}";
+            }
+
+            if (dashQueueList != null)
+            {
+                var q = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.QueueSnapshot;
+                if (q.Count == 0)
+                    dashQueueList.Text = "No raids queued yet.\nAdd one via BOTS → ADD BOT,\nor use !ra <seed> in Discord.";
+                else
+                    dashQueueList.Text = string.Join("\n", q.Take(6));
+            }
+
+            if (showHero)
+            {
+                if (dashHeroPokemonName != null)
+                    dashHeroPokemonName.Text = $"{(SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.IsShiny ? "★ " : "")}{SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.CurrentSpecies}";
+                if (dashHeroMeta != null)
+                    dashHeroMeta.Text = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.MetaLine;
+                if (dashHeroMoves != null)
+                    dashHeroMoves.Text = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.MoveList;
+                if (dashCodeValue != null)
+                    dashCodeValue.Text = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.CurrentCode;
+
+                int sec = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.TimerSecondsRemaining;
+                if (dashTimerValue != null && sec >= 0)
+                    dashTimerValue.Text = $"{sec / 60:D2}:{sec % 60:D2}";
+                int total = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.TimerSecondsTotal;
+                dashTimerProgress = (total > 0 && sec >= 0) ? Math.Clamp((float)sec / total, 0f, 1f) : 0f;
+                dashTimerRing?.Invalidate();
+
+                dashTotalJoined = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCount;
+                dashTotalCapacity = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCapacity;
+                dashJoinedDotsPanel?.Invalidate();
+
+                // Async sprite load — only when species changes
+                string url = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SpriteUrl;
+                if (dashHeroSprite != null && !string.IsNullOrEmpty(url) && dashHeroSprite.Tag as string != url)
+                {
+                    dashHeroSprite.Tag = url;
+                    _ = LoadSpriteAsync(url);
+                }
+            }
+        }
+
+        private bool _demoRunning = false;
+        private async System.Threading.Tasks.Task RunDashboardDemoAsync()
+        {
+            if (_demoRunning) return;
+            _demoRunning = true;
+            var D = typeof(SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState);
+            try
+            {
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.HasActiveRaid = true;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.CurrentSpecies = "Charizard";
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.IsShiny = true;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.Stars = 7;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.TeraTypeEnglish = "Fire";
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SpriteUrl = "https://raw.githubusercontent.com/hexbyt3/HomeImages/master/256x256/poke_capture_0006_000_mf_s_00000000_f_n.png";
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.CurrentCode = "GOLDFISH";
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.MetaLine = "7-Star Black Crystal · Mightiest Mark · Lv 100";
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.MoveList = "Flare Blitz · Air Slash · Dragon Pulse · Roost";
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.TimerSecondsTotal = 60;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.TimerSecondsRemaining = 60;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCount = 0;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCapacity = 4;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.CompletedTotal = 2758;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.WinCount = 2479;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.LossCount = 279;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.UptimeMinutes = 31 * 24 * 60 + 5 * 60;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SwitchConnected = true;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SwitchIp = "192.168.0.1";
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.DiscordConnected = true;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SysBotBaseReady = true;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SetQueueSnapshot(new[]
+                {
+                    "Charizard · ★★★★★★★",
+                    "Tinkaton · ★★★★★★",
+                    "Eevee event · ★★★",
+                    "Iron Bundle · ★★★★★★★",
+                    "Annihilape · ★★★★★",
+                });
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.Emit("+", "Quilava156 joined Charizard raid");
+
+                // Tick timer 60s → 0s, fire join events at intervals
+                for (int t = 60; t >= 0; t--)
+                {
+                    SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.TimerSecondsRemaining = t;
+                    if (t == 45) { SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCount = 1; SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.Emit("+", "Quilava156 claimed the code"); }
+                    if (t == 30) { SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCount = 2; SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.Emit("+", "Tye95 claimed the code"); }
+                    if (t == 18) { SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCount = 3; SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.Emit("+", "ShinyHunter claimed the code"); }
+                    if (t == 8)  { SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCount = 4; SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.Emit("★", "Lobby full — starting raid"); }
+                    await System.Threading.Tasks.Task.Delay(1000);
+                }
+                // Raid won
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.Emit("✓", "Charizard raid WON · 4/4 trainers");
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.WinCount = 2480;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.CompletedTotal = 2759;
+                await System.Threading.Tasks.Task.Delay(2500);
+            }
+            finally
+            {
+                // Reset to empty so the empty-state Pokeball animation comes back.
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.HasActiveRaid = false;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.TimerSecondsRemaining = -1;
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.JoinedCount = 0;
+                _demoRunning = false;
+            }
+        }
+
+        private async System.Threading.Tasks.Task LoadSpriteAsync(string url)
+        {
+            try
+            {
+                using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+                var bytes = await http.GetByteArrayAsync(url).ConfigureAwait(false);
+                using var ms = new System.IO.MemoryStream(bytes);
+                var img = Image.FromStream(ms);
+                if (dashHeroSprite != null)
+                {
+                    if (dashHeroSprite.InvokeRequired)
+                        dashHeroSprite.BeginInvoke(new Action(() => dashHeroSprite.Image = img));
+                    else
+                        dashHeroSprite.Image = img;
+                }
+            }
+            catch { /* sprite load is best-effort */ }
+        }
+
+        private Panel BuildStatusPillsPanel()
+        {
+            statusPillsPanel = new Panel
+            {
+                BackColor = Color.FromArgb(15, 15, 15),
+                Dock = DockStyle.Bottom,
+                Height = 140,
+                Padding = new Padding(22, 18, 22, 14),
+                Name = "statusPillsPanel",
+            };
+
+            statusHeaderLabel = new Label
+            {
+                Text = "STATUS",
+                ForeColor = Color.FromArgb(0xD4, 0xAF, 0x37),
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                AutoSize = false,
+                Size = new Size(220, 14),
+                Location = new Point(22, 14),
+                BackColor = Color.Transparent,
+            };
+            // Letter-spaced look via text padding hack; Segoe UI Bold @ 8pt with tracking reads as a label.
+
+            statusDiscordLabel = MakeStatusLine("Discord",     "connected",   PillState.Good, yOffset: 38);
+            statusSwitchLabel  = MakeStatusLine("Switch",      "192.168.0.1", PillState.Good, yOffset: 64);
+            statusSysbotLabel  = MakeStatusLine("sys-botbase", "ready",       PillState.Good, yOffset: 90);
+
+            statusPillsPanel.Controls.Add(statusHeaderLabel);
+            statusPillsPanel.Controls.Add(statusDiscordLabel);
+            statusPillsPanel.Controls.Add(statusSwitchLabel);
+            statusPillsPanel.Controls.Add(statusSysbotLabel);
+
+            // Top divider line
+            statusPillsPanel.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Color.FromArgb(28, 28, 28), 1);
+                e.Graphics.DrawLine(pen, 16, 4, statusPillsPanel.Width - 16, 4);
+            };
+
+            return statusPillsPanel;
+        }
+
+        private enum PillState { Good, Warn, Bad }
+
+        private Label MakeStatusLine(string service, string value, PillState state, int yOffset)
+        {
+            var dotColor = state switch
+            {
+                PillState.Good => Color.FromArgb(0x4A, 0xDE, 0x80),
+                PillState.Warn => Color.FromArgb(0xFB, 0xBF, 0x24),
+                PillState.Bad  => Color.FromArgb(0xF8, 0x71, 0x71),
+                _              => Color.Gray,
+            };
+
+            // One Label per row, custom-painted with: colored dot · service name · value.
+            var row = new Label
+            {
+                Location = new Point(22, yOffset),
+                Size = new Size(216, 20),
+                BackColor = Color.Transparent,
+                Text = string.Empty,
+                Name = $"status_{service}",
+                Tag = new StatusRowData { Service = service, Value = value, DotColor = dotColor },
+            };
+            row.Paint += StatusRow_Paint;
+            return row;
+        }
+
+        private class StatusRowData
+        {
+            public string Service { get; set; } = string.Empty;
+            public string Value   { get; set; } = string.Empty;
+            public Color  DotColor{ get; set; } = Color.Gray;
+        }
+
+        private void StatusRow_Paint(object? sender, PaintEventArgs e)
+        {
+            if (sender is not Label label || label.Tag is not StatusRowData data)
+                return;
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            // Colored dot
+            using (var dotBrush = new SolidBrush(data.DotColor))
+                e.Graphics.FillEllipse(dotBrush, 0, 6, 8, 8);
+            // Faint glow halo behind dot
+            using (var haloBrush = new SolidBrush(Color.FromArgb(40, data.DotColor)))
+                e.Graphics.FillEllipse(haloBrush, -2, 4, 12, 12);
+
+            // Service name (left), value (right)
+            using var nameFont = new Font("Segoe UI", 9F, FontStyle.Regular);
+            using var valueFont = new Font("Segoe UI", 9F, FontStyle.Regular);
+            using var nameBrush = new SolidBrush(Color.FromArgb(0xE0, 0xE0, 0xE0));
+            using var valueBrush = new SolidBrush(Color.FromArgb(0x8A, 0x8A, 0x8A));
+            e.Graphics.DrawString(data.Service, nameFont, nameBrush, 16, 3);
+
+            var valueSize = e.Graphics.MeasureString(data.Value, valueFont);
+            e.Graphics.DrawString(data.Value, valueFont, valueBrush, label.Width - valueSize.Width - 2, 3);
+        }
+
+        /// <summary>Update a sidebar status row at runtime. Safe to call from any thread.</summary>
+        public void SetStatusPill(string which, string value, bool good)
+        {
+            Label? target = which switch
+            {
+                "discord"     => statusDiscordLabel,
+                "switch"      => statusSwitchLabel,
+                "sys-botbase" => statusSysbotLabel,
+                _             => null,
+            };
+            if (target?.Tag is StatusRowData data)
+            {
+                data.Value = value;
+                data.DotColor = good
+                    ? Color.FromArgb(0x4A, 0xDE, 0x80)
+                    : Color.FromArgb(0xF8, 0x71, 0x71);
+                if (target.IsHandleCreated)
+                {
+                    if (target.InvokeRequired) target.BeginInvoke(new Action(target.Invalidate));
+                    else target.Invalidate();
+                }
+            }
         }
 
         private void ConfigureTextBox(TextBox tb, string placeholder, int x, int y, int width)
@@ -1101,10 +2466,11 @@ namespace SysBot.Pokemon.WinForms
             // Cache the gradient brush to prevent recreation
             if (_logoBrush == null)
             {
+                // PKM Universe gold gradient (#b8941f → #e8c252)
                 _logoBrush = new LinearGradientBrush(
                     logoPanel.ClientRectangle,
-                    Color.FromArgb(88, 101, 242),
-                    Color.FromArgb(87, 242, 135),
+                    Color.FromArgb(0xB8, 0x94, 0x1F),
+                    Color.FromArgb(0xE8, 0xC2, 0x52),
                     LinearGradientMode.ForwardDiagonal);
             }
 
@@ -1112,7 +2478,7 @@ namespace SysBot.Pokemon.WinForms
 
             // Draw text with glow
             using var font = new Font("Segoe UI", 22F, FontStyle.Bold);
-            var text = "S/V RAIDBOT";
+            var text = "RAID-SV";
             var textSize = e.Graphics.MeasureString(text, font);
             var x = (logoPanel.Width - textSize.Width) / 2;
             var y = (logoPanel.Height - textSize.Height) / 2;
@@ -1558,6 +2924,7 @@ namespace SysBot.Pokemon.WinForms
             botsPanel.Visible = false;
             hubPanel.Visible = false;
             logsPanel.Visible = false;
+            if (dashboardPanel != null) dashboardPanel.Visible = false;
 
             // Force refresh of content panel
             contentPanel.Refresh();
@@ -1574,6 +2941,13 @@ namespace SysBot.Pokemon.WinForms
                 case 2:
                     logsPanel.Visible = true;
                     logsPanel.Refresh(); // Extra refresh for logs panel
+                    break;
+                case 3:
+                    if (dashboardPanel != null)
+                    {
+                        dashboardPanel.Visible = true;
+                        RefreshDashboard();
+                    }
                     break;
             }
         }
@@ -1605,9 +2979,44 @@ namespace SysBot.Pokemon.WinForms
         private Button btnNavBots;
         private Button btnNavHub;
         private Button btnNavLogs;
+        private Button btnNavDashboard;
         private Button btnNavExit;
+        // Dashboard view (Phase 2)
+        private Panel? dashboardPanel;
+        private Label? dashHeroPokemonName;
+        private Label? dashHeroMeta;
+        private Label? dashHeroMoves;
+        private Label? dashCodeValue;
+        private Label? dashTimerValue;
+        private Label? dashJoinedDots;
+        private Label? dashQueueList;
+        private Label? dashStatsValues;
+        private Label? dashConnectionStatus;
+        private PictureBox? dashHeroSprite;
+        private FlowLayoutPanel? dashLiveFeed;
         private Panel sidebarBottomPanel;
+        private Panel statusPillsPanel;
+        private Label statusHeaderLabel;
+        private Label statusDiscordLabel;
+        private Label statusSwitchLabel;
+        private Label statusSysbotLabel;
         private Button btnUpdate;
+        // Configuration page (inner-sidebar design)
+        private Panel configInnerSidebar;
+        private Panel configSectionContent;
+        private Dictionary<string, Panel> sectionPanels;
+        private Dictionary<string, Button> configNavButtons = new();
+        private string currentConfigSection = "General";
+        // Quick-edit controls (now hosted inside the section panels)
+        private TextBox qsBotName;
+        private TextBox qsDiscordToken;
+        private TextBox qsCommandPrefix;
+        private TextBox qsGameStatus;
+        private NumericUpDown qsTotalRaids;
+        private CheckBox qsHideRaidCode;
+        private CheckBox qsUseScreenshots;
+        private CheckBox qsRotateRandom;
+        private CheckBox qsKeepDaySeed;
         private Label titleLabel;
         private FlowLayoutPanel controlButtonsPanel;
         private Button btnStart;

@@ -22,15 +22,17 @@ namespace SysBot.Base
                 return;
 
             var config = new LoggingConfiguration();
-            Directory.CreateDirectory("logs");
+            // Anchor logs next to the EXE so launching from any CWD (e.g. system32 via Start menu) works.
+            var logsDir = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logsDir);
             var logfile = new FileTarget("logfile")
             {
-                FileName = Path.Combine("logs", "SysBotLog.txt"),
+                FileName = Path.Combine(logsDir, "SysBotLog.txt"),
                 ConcurrentWrites = true,
 
                 ArchiveEvery = FileArchivePeriod.Day,
                 ArchiveNumbering = ArchiveNumberingMode.Date,
-                ArchiveFileName = Path.Combine("logs", "SysBotLog.{#}.txt"),
+                ArchiveFileName = Path.Combine(logsDir, "SysBotLog.{#}.txt"),
                 ArchiveDateFormat = "yyyy-MM-dd",
                 ArchiveAboveSize = 104857600, // 100MB (never)
                 MaxArchiveFiles = LogConfig.MaxArchiveFiles,

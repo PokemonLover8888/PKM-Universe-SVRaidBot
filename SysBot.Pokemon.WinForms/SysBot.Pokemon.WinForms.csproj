@@ -5,14 +5,14 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <UseWindowsForms>true</UseWindowsForms>
     <PackageId>SysBot.Pokemon.WinForms</PackageId>
-    <Company>Project Pokémon</Company>
-    <Authors>Kaphotics, Gengar</Authors>
+    <Company>PKM Universe Reborn</Company>
+    <Authors>Kaphotics, Gengar, hexbyt3, Quilava156</Authors>
 	  <LangVersion>13</LangVersion>
-    <Product>SysBot.Pokemon.WinForms</Product>
-    <Description>Nintendo Switch Pokémon Bot Manager</Description>
+    <Product>PKM Universe Raid System</Product>
+    <Description>PKM Universe Raid System — Scarlet/Violet Tera Raid hosting (forked from hexbyt3/SVRaidBot)</Description>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <StartupObject>SysBot.Pokemon.WinForms.Program</StartupObject>
-    <AssemblyName>SVRaidBot</AssemblyName>
+    <AssemblyName>PKM-Universe-Raid</AssemblyName>
     <Version>01.00.00</Version>
     <Platforms>x64</Platforms>
     <GenerateResourceUsePreserializedResources>true</GenerateResourceUsePreserializedResources>

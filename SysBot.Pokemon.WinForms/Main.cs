@@ -38,6 +38,9 @@ namespace SysBot.Pokemon.WinForms
 
         public Main()
         {
+            // Sweep stale .port files (PIDs no longer alive) before we register our own.
+            SweepStalePortFiles();
+
             InitializeComponent();
             Load += async (sender, e) => await InitializeAsync();
 
@@ -113,8 +116,8 @@ namespace SysBot.Pokemon.WinForms
             }
 
             LoadControls();
-            Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "S/V RaidBot" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
-            trayIcon.Text = (Config?.Hub?.BotName != null && !string.IsNullOrEmpty(Config.Hub.BotName)) ? Config.Hub.BotName : "S/V RaidBot";
+            Text = $"{(string.IsNullOrEmpty(Config.Hub.BotName) ? "Raid-SV — PKM Universe Raid System" : Config.Hub.BotName)} {SVRaidBot.Version} ({Config.Mode})";
+            trayIcon.Text = (Config?.Hub?.BotName != null && !string.IsNullOrEmpty(Config.Hub.BotName)) ? Config.Hub.BotName : "Raid-SV";
             _ = Task.Run(BotMonitor);
             InitUtil.InitializeStubs(Config.Mode);
             // Start periodic update checks
@@ -168,7 +171,8 @@ namespace SysBot.Pokemon.WinForms
         private void LoadControls()
         {
             MinimumSize = Size;
-            PG_Hub.SelectedObject = RunningEnvironment.Config;
+            // Advanced form is built LAZILY on first click of the ADVANCED nav — see SwitchConfigSection.
+            WireQuickSettings();
             _autoSaveTimer = new System.Windows.Forms.Timer
             {
                 Interval = 10_000,
@@ -201,14 +205,194 @@ namespace SysBot.Pokemon.WinForms
                 UpdateLog(line);
         }
 
+        private static readonly Color LogColorError = Color.FromArgb(0xF8, 0x71, 0x71);
+        private static readonly Color LogColorWarn  = Color.FromArgb(0xFB, 0xBF, 0x24);
+        private static readonly Color LogColorInfo  = Color.FromArgb(0xE0, 0xE0, 0xE0);
+        private static readonly Color LogColorDebug = Color.FromArgb(0x8A, 0x8A, 0x8A);
+        private static readonly Color LogColorTime  = Color.FromArgb(0xD4, 0xAF, 0x37);
+
         private void UpdateLog(string line)
         {
             // ghetto truncate
             if (RTB_Logs.Lines.Length > 99_999)
                 RTB_Logs.Lines = RTB_Logs.Lines.Skip(25_0000).ToArray();
 
-            RTB_Logs.AppendText(line);
+            // Pick a color for this line based on level keywords (case-insensitive).
+            Color lineColor = LogColorInfo;
+            var lower = line.AsSpan();
+            // Check after the timestamp prefix (e.g. "[12:34:56] - ") for level markers.
+            if (Contains(lower, "error") || Contains(lower, "fatal") || Contains(lower, "exception") || Contains(lower, "failed"))
+                lineColor = LogColorError;
+            else if (Contains(lower, "warn"))
+                lineColor = LogColorWarn;
+            else if (Contains(lower, "debug") || Contains(lower, "trace"))
+                lineColor = LogColorDebug;
+
+            // Append timestamp segment in gold, rest in the level color, for at-a-glance scanning.
+            int closeBracket = line.IndexOf(']');
+            if (closeBracket > 0 && line.StartsWith("["))
+            {
+                RTB_Logs.SelectionStart = RTB_Logs.TextLength;
+                RTB_Logs.SelectionLength = 0;
+                RTB_Logs.SelectionColor = LogColorTime;
+                RTB_Logs.AppendText(line.Substring(0, closeBracket + 1));
+
+                RTB_Logs.SelectionStart = RTB_Logs.TextLength;
+                RTB_Logs.SelectionLength = 0;
+                RTB_Logs.SelectionColor = lineColor;
+                RTB_Logs.AppendText(line.Substring(closeBracket + 1));
+            }
+            else
+            {
+                RTB_Logs.SelectionStart = RTB_Logs.TextLength;
+                RTB_Logs.SelectionLength = 0;
+                RTB_Logs.SelectionColor = lineColor;
+                RTB_Logs.AppendText(line);
+            }
             RTB_Logs.ScrollToCaret();
+        }
+
+        private static bool Contains(ReadOnlySpan<char> haystack, string needle)
+        {
+            return haystack.IndexOf(needle.AsSpan(), StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>Delete this process's own SVRaidBot_{pid}.port file. Safe to call repeatedly.</summary>
+        private static void CleanupOwnPortFile()
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(Application.ExecutablePath);
+                if (string.IsNullOrEmpty(dir)) return;
+                var path = Path.Combine(dir, $"SVRaidBot_{Environment.ProcessId}.port");
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch { /* cleanup is best-effort */ }
+        }
+
+        /// <summary>
+        /// At startup, sweep the EXE folder for SVRaidBot_*.port files whose PIDs no longer
+        /// correspond to a live process — those are leftovers from prior crashes or force-kills.
+        /// </summary>
+        private static void SweepStalePortFiles()
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(Application.ExecutablePath);
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
+                foreach (var path in Directory.EnumerateFiles(dir, "SVRaidBot_*.port"))
+                {
+                    var name = Path.GetFileNameWithoutExtension(path); // "SVRaidBot_12345"
+                    var underscore = name.IndexOf('_');
+                    if (underscore < 0) continue;
+                    if (!int.TryParse(name.AsSpan(underscore + 1), out var pid)) continue;
+                    bool alive;
+                    try { alive = System.Diagnostics.Process.GetProcessById(pid) != null; }
+                    catch (ArgumentException) { alive = false; }
+                    catch { alive = true; } // be conservative — don't delete if uncertain
+                    if (!alive)
+                    {
+                        try { File.Delete(path); } catch { }
+                    }
+                }
+            }
+            catch { /* sweep is best-effort */ }
+        }
+
+        /// <summary>
+        /// Hooks the 6 Quick Settings cards to the live Config object: load current values into the controls,
+        /// write back to Config on edit, and refresh the PropertyGrid so the Advanced view stays in sync.
+        /// </summary>
+        private void WireQuickSettings()
+        {
+            if (Config?.Hub == null)
+                return;
+            var hub = Config.Hub;
+
+            // 1. Populate current values
+            qsBotName.Text       = hub.BotName ?? string.Empty;
+            qsDiscordToken.Text  = hub.Discord?.Token ?? string.Empty;
+            qsCommandPrefix.Text = (hub.Discord?.CommandPrefix?.Count > 0) ? hub.Discord.CommandPrefix[0] : "!";
+            qsGameStatus.Text    = hub.Discord?.BotGameStatus ?? string.Empty;
+            qsTotalRaids.Value   = Math.Clamp(hub.RotatingRaidSV?.RaidSettings?.TotalRaidsToHost ?? 0, 0, 100000);
+            qsHideRaidCode.Checked = hub.RotatingRaidSV?.EmbedToggles?.HideRaidCode ?? true;
+            qsUseScreenshots.Checked = hub.RotatingRaidSV?.EmbedToggles?.TakeScreenshot ?? true;
+            qsRotateRandom.Checked   = hub.RotatingRaidSV?.RaidSettings?.RandomRotation ?? false;
+            qsKeepDaySeed.Checked    = hub.RotatingRaidSV?.RaidSettings?.KeepDaySeed   ?? true;
+
+            // 2. Wire change handlers — write back to Config + refresh PropertyGrid
+            qsBotName.TextChanged += (s, e) =>
+            {
+                hub.BotName = qsBotName.Text;
+                PG_Hub.Refresh();
+            };
+            qsDiscordToken.TextChanged += (s, e) =>
+            {
+                if (hub.Discord != null)
+                {
+                    hub.Discord.Token = qsDiscordToken.Text;
+                    PG_Hub.Refresh();
+                }
+            };
+            qsCommandPrefix.TextChanged += (s, e) =>
+            {
+                if (hub.Discord != null)
+                {
+                    var prefix = string.IsNullOrWhiteSpace(qsCommandPrefix.Text) ? "!" : qsCommandPrefix.Text;
+                    if (hub.Discord.CommandPrefix.Count == 0) hub.Discord.CommandPrefix.Add(prefix);
+                    else hub.Discord.CommandPrefix[0] = prefix;
+                    PG_Hub.Refresh();
+                }
+            };
+            qsGameStatus.TextChanged += (s, e) =>
+            {
+                if (hub.Discord != null)
+                {
+                    hub.Discord.BotGameStatus = qsGameStatus.Text;
+                    PG_Hub.Refresh();
+                }
+            };
+            qsTotalRaids.ValueChanged += (s, e) =>
+            {
+                if (hub.RotatingRaidSV?.RaidSettings != null)
+                {
+                    hub.RotatingRaidSV.RaidSettings.TotalRaidsToHost = (int)qsTotalRaids.Value;
+                    PG_Hub.Refresh();
+                }
+            };
+            qsHideRaidCode.CheckedChanged += (s, e) =>
+            {
+                if (hub.RotatingRaidSV?.EmbedToggles != null)
+                {
+                    hub.RotatingRaidSV.EmbedToggles.HideRaidCode = qsHideRaidCode.Checked;
+                    PG_Hub.Refresh();
+                }
+            };
+            qsUseScreenshots.CheckedChanged += (s, e) =>
+            {
+                if (hub.RotatingRaidSV?.EmbedToggles != null)
+                {
+                    hub.RotatingRaidSV.EmbedToggles.TakeScreenshot = qsUseScreenshots.Checked;
+                    PG_Hub.Refresh();
+                }
+            };
+            qsRotateRandom.CheckedChanged += (s, e) =>
+            {
+                if (hub.RotatingRaidSV?.RaidSettings != null)
+                {
+                    hub.RotatingRaidSV.RaidSettings.RandomRotation = qsRotateRandom.Checked;
+                    PG_Hub.Refresh();
+                }
+            };
+            qsKeepDaySeed.CheckedChanged += (s, e) =>
+            {
+                if (hub.RotatingRaidSV?.RaidSettings != null)
+                {
+                    hub.RotatingRaidSV.RaidSettings.KeepDaySeed = qsKeepDaySeed.Checked;
+                    PG_Hub.Refresh();
+                }
+            };
         }
 
         private ProgramConfig GetCurrentConfiguration()
@@ -235,19 +419,13 @@ namespace SysBot.Pokemon.WinForms
                 WindowState = FormWindowState.Minimized;
                 ShowInTaskbar = false;
                 trayIcon.Visible = true;
-                trayIcon.ShowBalloonTip(2000, "S/V RaidBot", "Application minimized to system tray", ToolTipIcon.Info);
+                trayIcon.ShowBalloonTip(2000, "Raid-SV", "Application minimized to system tray. Right-click → Exit to quit.", ToolTipIcon.Info);
                 return;
             }
             this.StopWebServer();
 
             // Delete the port info file
-            try
-            {
-                string portInfoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), $"SVRaidBot_{Environment.ProcessId}.port");
-                if (File.Exists(portInfoPath))
-                    File.Delete(portInfoPath);
-            }
-            catch { /* Ignore cleanup errors */ }
+            CleanupOwnPortFile();
 
             if (_autoSaveTimer != null)
             {
@@ -266,6 +444,10 @@ namespace SysBot.Pokemon.WinForms
                 animationTimer.Stop();
                 animationTimer.Dispose();
             }
+
+            // Belt-and-suspenders: try the cleanup again here in case the .port file was
+            // recreated by an async path after the first attempt.
+            CleanupOwnPortFile();
             // Create a backup copy of config
             try
             {
@@ -510,6 +692,16 @@ namespace SysBot.Pokemon.WinForms
         private void CB_Protocol_SelectedIndexChanged(object sender, EventArgs e)
         {
             TB_IP.Visible = CB_Protocol.SelectedIndex == 0;
+        }
+
+        /// <summary>
+        /// Public, thread-safe entrypoint for restoring the window from the system tray.
+        /// Called from Program.cs when a second launch attempt detects the running instance.
+        /// </summary>
+        public void RestoreFromTray()
+        {
+            if (InvokeRequired) { BeginInvoke((MethodInvoker)ShowFromTray); }
+            else { ShowFromTray(); }
         }
 
         private void ShowFromTray()
