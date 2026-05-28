@@ -8,13 +8,12 @@
 
 [![Website](https://img.shields.io/badge/web-pkm--universe.com-d4af37)](https://pkm-universe.com)
 [![Discord](https://img.shields.io/badge/discord-PKM%20Universe%20Reborn-5865f2)](https://discord.gg/pkm-universe-reborn)
-![Built on](https://img.shields.io/badge/fork%20of-hexbyt3%2FSVRaidBot-555)
 
 </div>
 
 ---
 
-> A private, rebranded fork of [hexbyt3/SVRaidBot](https://github.com/hexbyt3/SVRaidBot) tailored for the PKM Universe Reborn community. Branded **Raid-SV**, gold-themed, with a custom dashboard, Discord button UX, per-trainer history, and an auto-posted weekly leaderboard.
+> **Raid-SV** is the PKM Universe Reborn community's automated Tera Raid host for Pokémon Scarlet &amp; Violet. Gold-themed throughout, with a live dashboard, one-click Discord buttons, verified-member code delivery, per-trainer raid history, and an auto-posted weekly leaderboard.
 
 ### The bot dashboard
 ![Raid-SV Dashboard](docs/screenshots/01-dashboard.png)
