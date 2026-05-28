@@ -16,8 +16,11 @@
 
 > A private, rebranded fork of [hexbyt3/SVRaidBot](https://github.com/hexbyt3/SVRaidBot) tailored for the PKM Universe Reborn community. Branded **Raid-SV**, gold-themed, with a custom dashboard, Discord button UX, per-trainer history, and an auto-posted weekly leaderboard.
 
-<!-- SCREENSHOTS: drag-drop your own Dashboard / embed / Configuration screenshots here in the GitHub README editor. -->
-<!-- Suggested order: 1) Dashboard hero card, 2) a raid embed with buttons, 3) the Configuration inner-sidebar. -->
+### The bot dashboard
+![Raid-SV Dashboard](docs/screenshots/01-dashboard.png)
+
+### Discord raid embeds — Jon's style (left) vs the PKM Universe rebuild with buttons (right)
+![Raid embeds](docs/screenshots/02-embeds.png)
 
 ---
 
