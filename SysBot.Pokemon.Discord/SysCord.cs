@@ -616,6 +616,11 @@ namespace SysBot.Pokemon.Discord
             await Log(new LogMessage(LogSeverity.Info, "LoadLoggingAndEcho()", "Logging and Echo channels loaded!")).ConfigureAwait(false);
             MessageChannelsLoaded = true;
 
+            // Surface real Discord connection state to the WinForms Dashboard / status pills.
+            SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.DiscordConnected = true;
+            _client.Disconnected += _ => { SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.DiscordConnected = false; return Task.CompletedTask; };
+            _client.Connected    += () => { SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.DiscordConnected = true;  return Task.CompletedTask; };
+
             var game = Hub.Config.Discord.BotGameStatus;
             if (!string.IsNullOrWhiteSpace(game))
                 await _client.SetGameAsync(game).ConfigureAwait(false);

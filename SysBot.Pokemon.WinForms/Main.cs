@@ -164,8 +164,33 @@ namespace SysBot.Pokemon.WinForms
                     // Can try a for-loop or ToArray, but those still don't prevent concurrent mutations of the array.
                     // Just try, and if failed, ignore. Next loop will be fine. Locks on the collection are kinda overkill, since this task is not critical.
                 }
+
+                // Push real connection state to the Dashboard + sidebar status pills.
+                try { UpdateConnectionStatus(); } catch { /* best-effort */ }
+
                 await Task.Delay(2_000).ConfigureAwait(false);
             }
+        }
+
+        private void UpdateConnectionStatus()
+        {
+            var D = typeof(SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState);
+
+            // Switch IP from the first configured bot; connection = bot runner running.
+            string ip = (Bots != null && Bots.Count > 0) ? (Bots[0].Connection?.IP ?? string.Empty) : string.Empty;
+            bool running = RunningEnvironment != null && RunningEnvironment.IsRunning;
+            bool hasBot = Bots != null && Bots.Count > 0;
+
+            SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SwitchIp = ip;
+            SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SwitchConnected = hasBot && running;
+            SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SysBotBaseReady = hasBot && running;
+            // DiscordConnected is set by SysCord; just read it for the pill.
+            bool discord = SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.DiscordConnected;
+
+            // Update the sidebar status pills (these are always visible, regardless of view).
+            SetStatusPill("switch",      string.IsNullOrEmpty(ip) ? "not set" : ip, hasBot && running);
+            SetStatusPill("discord",     discord ? "connected" : "offline",         discord);
+            SetStatusPill("sys-botbase", (hasBot && running) ? "ready" : "idle",     hasBot && running);
         }
 
         private void LoadControls()
