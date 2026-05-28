@@ -33,6 +33,12 @@ namespace SysBot.Pokemon.WinForms
 #if NETCOREAPP
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
 #endif
+            // The raid loop does heavy synchronous Switch I/O that can saturate the thread pool.
+            // .NET only injects new pool threads ~1/sec, which delays Discord button-interaction
+            // handlers past the 3-second ACK window ("This interaction failed"). Raising the floor
+            // keeps ready threads available so handler continuations run immediately.
+            ThreadPool.SetMinThreads(64, 64);
+
             var cmd = Environment.GetCommandLineArgs();
             var cfg = Array.Find(cmd, z => z.EndsWith(".json"));
             if (cfg != null)

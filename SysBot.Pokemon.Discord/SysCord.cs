@@ -314,6 +314,10 @@ namespace SysBot.Pokemon.Discord
         {
             try
             {
+                // ACK the interaction immediately (within Discord's 3-second window) so a busy bot —
+                // e.g. mid game-reboot, when the thread pool is briefly saturated — never returns
+                // "This interaction failed". All replies below go out via FollowupAsync.
+                await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
                 var customId = component.Data.CustomId;
                 switch (customId)
                 {
@@ -322,7 +326,7 @@ namespace SysBot.Pokemon.Discord
                         var messageId = component.Message.Id;
                         if (!SharedRaidCodeHandler.IsActiveRaidMessage(messageId))
                         {
-                            await component.RespondAsync("This raid is no longer active.", ephemeral: true).ConfigureAwait(false);
+                            await component.FollowupAsync("This raid is no longer active.", ephemeral: true).ConfigureAwait(false);
                             return;
                         }
 
@@ -339,7 +343,7 @@ namespace SysBot.Pokemon.Discord
                                          || guildUser.Roles.Any(r => Hub.Config.Discord.RoleSudo.Contains(r.Name) || Hub.Config.Discord.RoleSudo.Contains(r.Id));
                             if (!hasRole && !isSudo)
                             {
-                                await component.RespondAsync(
+                                await component.FollowupAsync(
                                     "🔒 **Verified members only.** You need a PKM Universe verified role to claim raid codes.\n" +
                                     "Get verified at **pkm-universe.com** or ask a mod for the role, then click again.",
                                     ephemeral: true).ConfigureAwait(false);
@@ -349,21 +353,21 @@ namespace SysBot.Pokemon.Discord
                         else if (gateEnabled && component.User is not global::Discord.WebSocket.SocketGuildUser)
                         {
                             // Not in a guild context (DM, ephemeral channel) — can't verify role membership.
-                            await component.RespondAsync("Codes can only be claimed from a server, not DMs.", ephemeral: true).ConfigureAwait(false);
+                            await component.FollowupAsync("Codes can only be claimed from a server, not DMs.", ephemeral: true).ConfigureAwait(false);
                             return;
                         }
 
                         var code = SharedRaidCodeHandler.GetRaidCodeForMessage(messageId);
                         if (string.IsNullOrEmpty(code))
                         {
-                            await component.RespondAsync("No code found for this raid.", ephemeral: true).ConfigureAwait(false);
+                            await component.FollowupAsync("No code found for this raid.", ephemeral: true).ConfigureAwait(false);
                             return;
                         }
                         try
                         {
                             var dm = await component.User.CreateDMChannelAsync().ConfigureAwait(false);
                             await dm.SendMessageAsync($"Your raid code is **{code}**\nGood luck out there!").ConfigureAwait(false);
-                            await component.RespondAsync("Code sent — check your DMs!", ephemeral: true).ConfigureAwait(false);
+                            await component.FollowupAsync("Code sent — check your DMs!", ephemeral: true).ConfigureAwait(false);
 
                             // Record this claim in the per-trainer history (used by !myraids and the weekly leaderboard).
                             var info = SharedRaidCodeHandler.GetRaidInfoDict(messageId);
@@ -374,7 +378,7 @@ namespace SysBot.Pokemon.Discord
                         }
                         catch (global::Discord.Net.HttpException)
                         {
-                            await component.RespondAsync("I couldn't DM you. Enable DMs from server members in your Discord privacy settings, then click again.", ephemeral: true).ConfigureAwait(false);
+                            await component.FollowupAsync("I couldn't DM you. Enable DMs from server members in your Discord privacy settings, then click again.", ephemeral: true).ConfigureAwait(false);
                         }
                         return;
                     }
@@ -387,7 +391,7 @@ namespace SysBot.Pokemon.Discord
                                     "4. Be patient — the host will fill the lobby in order.\n" +
                                     "5. Save before joining a 7★ raid; if you faint, you keep your party.\n" +
                                     "\nFull guide: https://pkm-universe.com";
-                        await component.RespondAsync(rules, ephemeral: true).ConfigureAwait(false);
+                        await component.FollowupAsync(rules, ephemeral: true).ConfigureAwait(false);
                         return;
                     }
                 }
@@ -395,7 +399,7 @@ namespace SysBot.Pokemon.Discord
             catch (Exception ex)
             {
                 LogUtil.LogError($"ButtonExecuted handler error: {ex.Message}", nameof(HandleButtonExecutedAsync));
-                try { await component.RespondAsync("Something went wrong handling that button. Try again.", ephemeral: true).ConfigureAwait(false); }
+                try { await component.FollowupAsync("Something went wrong handling that button. Try again.", ephemeral: true).ConfigureAwait(false); }
                 catch { /* already responded */ }
             }
         }
