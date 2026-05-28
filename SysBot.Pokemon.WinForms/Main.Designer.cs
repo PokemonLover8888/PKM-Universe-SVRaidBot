@@ -442,7 +442,8 @@ namespace SysBot.Pokemon.WinForms
             botsPanel.Dock = DockStyle.Fill;
             botsPanel.Location = new Point(0, 100);
             botsPanel.Name = "botsPanel";
-            botsPanel.Padding = new Padding(40);
+            // Top padding clears the header bar (it overlaps the top of the fill panels).
+            botsPanel.Padding = new Padding(40, 110, 40, 40);
             botsPanel.Size = new Size(1020, 620);
             botsPanel.TabIndex = 0;
             botsPanel.Visible = false; // Dashboard is the default landing page now
