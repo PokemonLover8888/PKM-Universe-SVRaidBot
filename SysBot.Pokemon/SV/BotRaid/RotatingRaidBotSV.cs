@@ -3620,6 +3620,28 @@ namespace SysBot.Pokemon.SV.BotRaid
                 embed.AddField("\u200b", "\u200b", true);
             }
 
+            // PKM Universe: AI tactical blurb (Gemini). Best-effort, cached per species/tera/ability;
+            // a 6s timeout means it never holds up the raid post for long.
+            if (!disband && !upnext && !raidstart && _settings.EmbedToggles.EnableAIRaidBlurb
+                && !string.IsNullOrWhiteSpace(_settings.EmbedToggles.GeminiApiKey))
+            {
+                try
+                {
+                    string blurb = await Helpers.RaidBlurbService.GenerateAsync(
+                        _settings.EmbedToggles.GeminiApiKey,
+                        RaidEmbedInfoHelpers.RaidSpecies.ToString(),
+                        RaidEmbedInfoHelpers.RaidSpeciesTeraType,
+                        RaidEmbedInfoHelpers.RaidSpeciesAbility,
+                        RaidEmbedInfoHelpers.Moves?.Replace("\n", ", ") ?? string.Empty,
+                        RaidEmbedInfoHelpers.IsShiny,
+                        _settings.ActiveRaids.Count > _currentRaidIndex ? _settings.ActiveRaids[_currentRaidIndex].DifficultyLevel : 0,
+                        token).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(blurb))
+                        embed.AddField("**__AI Scout Report__**", $"*{blurb}*", false);
+                }
+                catch (Exception ex) { Log($"AI blurb skipped: {ex.Message}"); }
+            }
+
             if (!disband && !upnext && !raidstart && _settings.EmbedToggles.IncludeMoves)
             {
                 embed.AddLocalizedField("**__Special Rewards__**", string.IsNullOrEmpty($"{RaidEmbedInfoHelpers.SpecialRewards}")

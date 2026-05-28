@@ -474,7 +474,15 @@ namespace SysBot.Pokemon
 
             [Category(FeatureToggle), Description("When enabled, the bot will hide the raid code from the Discord embed and screenshots. When disabled, shows raid code like the old system.")]
             [DisplayName("Hide Raid Code from Embed?")]
-            public bool HideRaidCode { get; set; } = true; // Reactions to get Raid Codes sent via DM 
+            public bool HideRaidCode { get; set; } = true; // Reactions to get Raid Codes sent via DM
+
+            [Category(FeatureToggle), Description("PKM Universe: add a one-line AI tactical blurb to each raid embed (Gemini). Requires a Gemini API key below.")]
+            [DisplayName("AI Raid Blurb?")]
+            public bool EnableAIRaidBlurb { get; set; } = false;
+
+            [Category(FeatureToggle), Description("Google Gemini API key for the AI raid blurb. Get one free at https://aistudio.google.com/apikey. Leave blank to disable.")]
+            [DisplayName("Gemini API Key")]
+            public string GeminiApiKey { get; set; } = string.Empty;
         }
 
         [Category("MysteryRaids"), TypeConverter(typeof(ExpandableObjectConverter))]
