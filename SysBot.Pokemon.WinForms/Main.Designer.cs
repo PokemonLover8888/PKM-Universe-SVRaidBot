@@ -96,6 +96,7 @@ namespace SysBot.Pokemon.WinForms
             logSearchBox = new TextBox();
             searchStatusLabel = new Label();
             btnClearLogs = new Button();
+            btnCopyLogs = new Button();
 
             mainLayoutPanel.SuspendLayout();
             sidebarPanel.SuspendLayout();
@@ -645,6 +646,7 @@ namespace SysBot.Pokemon.WinForms
             // Logs Header Panel
             logsHeaderPanel.BackColor = Color.FromArgb(35, 35, 35);
             logsHeaderPanel.Controls.Add(btnClearLogs);
+            logsHeaderPanel.Controls.Add(btnCopyLogs);
             logsHeaderPanel.Controls.Add(searchStatusLabel);
             logsHeaderPanel.Controls.Add(logSearchBox);
             logsHeaderPanel.Dock = DockStyle.Top;
@@ -705,6 +707,39 @@ namespace SysBot.Pokemon.WinForms
                 lastSearchText = "";
             };
             ConfigureGlowButton(btnClearLogs);
+
+            // Copy Logs Button (PKM Universe gold)
+            btnCopyLogs.BackColor = Color.FromArgb(212, 175, 55);
+            btnCopyLogs.Dock = DockStyle.Right;
+            btnCopyLogs.FlatAppearance.BorderSize = 0;
+            btnCopyLogs.FlatStyle = FlatStyle.Flat;
+            btnCopyLogs.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+            btnCopyLogs.ForeColor = Color.FromArgb(28, 28, 28);
+            btnCopyLogs.Location = new Point(676, 15);
+            btnCopyLogs.Name = "btnCopyLogs";
+            btnCopyLogs.Size = new Size(120, 30);
+            btnCopyLogs.TabIndex = 3;
+            btnCopyLogs.Text = "COPY LOGS";
+            btnCopyLogs.UseVisualStyleBackColor = false;
+            btnCopyLogs.Cursor = Cursors.Hand;
+            btnCopyLogs.Click += (s, e) => {
+                var text = RTB_Logs.SelectionLength > 0 ? RTB_Logs.SelectedText : RTB_Logs.Text;
+                if (string.IsNullOrEmpty(text))
+                {
+                    searchStatusLabel.Text = "No logs to copy";
+                    return;
+                }
+                try
+                {
+                    Clipboard.SetText(text);
+                    searchStatusLabel.Text = RTB_Logs.SelectionLength > 0 ? "Copied selection" : "Copied all logs";
+                }
+                catch
+                {
+                    searchStatusLabel.Text = "Copy failed — try again";
+                }
+            };
+            ConfigureGlowButton(btnCopyLogs);
 
             // Rich Text Box
             RTB_Logs.BackColor = Color.FromArgb(28, 28, 28);
@@ -3074,6 +3109,7 @@ namespace SysBot.Pokemon.WinForms
         private TextBox logSearchBox;
         private Label searchStatusLabel;
         private Button btnClearLogs;
+        private Button btnCopyLogs;
         private Panel particlePanel;
         private Panel statusIndicator;
         private System.Windows.Forms.Timer animationTimer;
