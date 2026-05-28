@@ -19,8 +19,8 @@
 ### The bot dashboard
 ![Raid-SV Dashboard](docs/screenshots/01-dashboard.png)
 
-### Discord raid embeds — Jon's style (left) vs the PKM Universe rebuild with buttons (right)
-![Raid embeds](docs/screenshots/02-embeds.png)
+### A PKM Universe raid embed
+![Raid embed](docs/screenshots/02-embed.png)
 
 ---
 
