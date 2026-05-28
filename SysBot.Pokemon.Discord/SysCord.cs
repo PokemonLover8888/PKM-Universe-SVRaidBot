@@ -243,11 +243,161 @@ namespace SysBot.Pokemon.Discord
                 }
             };
 
+            // PKM Universe: edit-in-place recap when a raid finishes.
+            // Modifies the existing raid embed to show win/loss + trainer list + bot W/L footer line.
+            SharedRaidCodeHandler.PostRaidRecapCallback = async (messageId, channelId, recap) =>
+            {
+                try
+                {
+                    var channel = await _client.GetChannelAsync(channelId) as IMessageChannel;
+                    if (channel == null) return;
+                    if (await channel.GetMessageAsync(messageId) is not IUserMessage message) return;
+
+                    // Resolve claimant user IDs to display names.
+                    var trainerNames = new System.Collections.Generic.List<string>();
+                    foreach (var uid in recap.ClaimantUserIds)
+                    {
+                        var user = await _client.GetUserAsync(uid);
+                        trainerNames.Add(user?.Username ?? $"<@{uid}>");
+                    }
+
+                    // Reuse the existing embed and add a recap header + result + trainer list at the top.
+                    var existing = message.Embeds.OfType<Embed>().FirstOrDefault();
+                    var newEmbed = existing != null ? existing.ToEmbedBuilder() : new EmbedBuilder();
+                    newEmbed.Color = recap.Won ? new global::Discord.Color(0x4A, 0xDE, 0x80) : new global::Discord.Color(0xF8, 0x71, 0x71);
+
+                    // Prepend the recap line in the description.
+                    string resultMark = recap.Won ? "✅  **RAID WON**" : "❌  **RAID FAILED**";
+                    string trainerLine = trainerNames.Count > 0
+                        ? string.Join(" · ", trainerNames)
+                        : "(no trainers claimed the code)";
+                    string recapBlock = $"{resultMark}\n**Trainers:** {trainerLine}\n";
+                    newEmbed.Description = string.IsNullOrEmpty(newEmbed.Description)
+                        ? recapBlock
+                        : recapBlock + "\n" + newEmbed.Description;
+
+                    // Update the footer with the new completed total / W-L.
+                    double winRate = recap.CompletedRaidsTotal > 0 ? Math.Round((double)recap.WinCount / recap.CompletedRaidsTotal * 100, 1) : 0;
+                    var footer = newEmbed.Footer ?? new EmbedFooterBuilder();
+                    footer.Text = $"★ Raids by PKM Universe Reborn ★ · Completed {recap.CompletedRaidsTotal} (W {recap.WinCount} / L {recap.LossCount}) · {winRate}% win rate";
+                    newEmbed.Footer = footer;
+
+                    await message.ModifyAsync(m =>
+                    {
+                        m.Embed = newEmbed.Build();
+                        // Remove the action-row components — the raid is over, buttons are no longer relevant.
+                        m.Components = new ComponentBuilder().Build();
+                    }).ConfigureAwait(false);
+                    Log(new LogMessage(LogSeverity.Info, "RaidRecap", $"Edited embed for message {messageId} with {(recap.Won ? "WON" : "LOST")} result, {trainerNames.Count} trainers"));
+                }
+                catch (Exception ex)
+                {
+                    Log(new LogMessage(LogSeverity.Error, "RaidRecap", $"Error posting recap: {ex.Message}"));
+                }
+            };
+
             // Subscribe a handler to see if a message invokes a command.
             _client.Ready += LoadLoggingAndEcho;
             _client.MessageReceived += HandleMessageAsync;
             _client.ReactionAdded += HandleReactionAddedAsync;
             _client.ReactionAdded += ExtraCommandUtil<T>.HandleReactionAsync;
+            _client.ButtonExecuted += HandleButtonExecutedAsync;
+        }
+
+        /// <summary>
+        /// PKM Universe upgrade: handle raid-embed button clicks.
+        /// Custom IDs:
+        ///   raid_get_code → DM the raid code (replaces the ✅ reaction flow)
+        ///   raid_rules    → Ephemeral reply with the community raid rules
+        /// </summary>
+        private async Task HandleButtonExecutedAsync(SocketMessageComponent component)
+        {
+            try
+            {
+                var customId = component.Data.CustomId;
+                switch (customId)
+                {
+                    case "raid_get_code":
+                    {
+                        var messageId = component.Message.Id;
+                        if (!SharedRaidCodeHandler.IsActiveRaidMessage(messageId))
+                        {
+                            await component.RespondAsync("This raid is no longer active.", ephemeral: true).ConfigureAwait(false);
+                            return;
+                        }
+
+                        // Verified-gate: only members with the configured raid role can claim codes.
+                        // Falls open (everyone allowed) if no role is configured, matching the existing AllowIfEmpty contract.
+                        var raidRoleList = Hub.Config.Discord.RoleRaidRequest;
+                        bool gateEnabled = raidRoleList.List.Count > 0 || !raidRoleList.AllowIfEmpty;
+                        if (gateEnabled && component.User is global::Discord.WebSocket.SocketGuildUser guildUser)
+                        {
+                            bool hasRole = guildUser.Roles.Any(r =>
+                                raidRoleList.Contains(r.Name) || raidRoleList.Contains(r.Id));
+                            // Sudo/admin override — server admins can always claim.
+                            bool isSudo = guildUser.GuildPermissions.Administrator
+                                         || guildUser.Roles.Any(r => Hub.Config.Discord.RoleSudo.Contains(r.Name) || Hub.Config.Discord.RoleSudo.Contains(r.Id));
+                            if (!hasRole && !isSudo)
+                            {
+                                await component.RespondAsync(
+                                    "🔒 **Verified members only.** You need a PKM Universe verified role to claim raid codes.\n" +
+                                    "Get verified at **pkm-universe.com** or ask a mod for the role, then click again.",
+                                    ephemeral: true).ConfigureAwait(false);
+                                return;
+                            }
+                        }
+                        else if (gateEnabled && component.User is not global::Discord.WebSocket.SocketGuildUser)
+                        {
+                            // Not in a guild context (DM, ephemeral channel) — can't verify role membership.
+                            await component.RespondAsync("Codes can only be claimed from a server, not DMs.", ephemeral: true).ConfigureAwait(false);
+                            return;
+                        }
+
+                        var code = SharedRaidCodeHandler.GetRaidCodeForMessage(messageId);
+                        if (string.IsNullOrEmpty(code))
+                        {
+                            await component.RespondAsync("No code found for this raid.", ephemeral: true).ConfigureAwait(false);
+                            return;
+                        }
+                        try
+                        {
+                            var dm = await component.User.CreateDMChannelAsync().ConfigureAwait(false);
+                            await dm.SendMessageAsync($"Your raid code is **{code}**\nGood luck out there!").ConfigureAwait(false);
+                            await component.RespondAsync("Code sent — check your DMs!", ephemeral: true).ConfigureAwait(false);
+
+                            // Record this claim in the per-trainer history (used by !myraids and the weekly leaderboard).
+                            var info = SharedRaidCodeHandler.GetRaidInfoDict(messageId);
+                            string raidTitle = info?.TryGetValue("RaidTitle", out var t) == true ? t : "Raid";
+                            bool isShiny = info?.TryGetValue("IsShiny", out var s) == true && bool.TryParse(s, out var sh) && sh;
+                            int stars = info?.TryGetValue("DifficultyLevel", out var d) == true && int.TryParse(d, out var dv) ? dv : 0;
+                            RaidHistoryStore.RecordClaim(component.User.Id, messageId, raidTitle, stars, isShiny);
+                        }
+                        catch (global::Discord.Net.HttpException)
+                        {
+                            await component.RespondAsync("I couldn't DM you. Enable DMs from server members in your Discord privacy settings, then click again.", ephemeral: true).ConfigureAwait(false);
+                        }
+                        return;
+                    }
+                    case "raid_rules":
+                    {
+                        var rules = "**PKM Universe Raid Rules**\n" +
+                                    "1. One raid per click — don't spam the button.\n" +
+                                    "2. Lead with a Pokémon that resists the raid's tera type.\n" +
+                                    "3. Don't terastallize unless the host says it's okay.\n" +
+                                    "4. Be patient — the host will fill the lobby in order.\n" +
+                                    "5. Save before joining a 7★ raid; if you faint, you keep your party.\n" +
+                                    "\nFull guide: https://pkm-universe.com";
+                        await component.RespondAsync(rules, ephemeral: true).ConfigureAwait(false);
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError($"ButtonExecuted handler error: {ex.Message}", nameof(HandleButtonExecutedAsync));
+                try { await component.RespondAsync("Something went wrong handling that button. Try again.", ephemeral: true).ConfigureAwait(false); }
+                catch { /* already responded */ }
+            }
         }
 
         private async Task HandleReactionAddedAsync(Cacheable<IUserMessage, ulong> cachedMessage,
@@ -458,6 +608,9 @@ namespace SysBot.Pokemon.Discord
 
             // Restore Logging
             LogModule.RestoreLogging(_client, Hub.Config.Discord);
+
+            // Start the weekly leaderboard scheduler — checks hourly, posts on Sunday 00:00-02:00 UTC.
+            SysBot.Pokemon.Discord.Helpers.WeeklyLeaderboardScheduler.Start(_client, () => Hub.Config.Discord.LeaderboardChannelId);
 
             // Don't let it load more than once in case of Discord hiccups.
             await Log(new LogMessage(LogSeverity.Info, "LoadLoggingAndEcho()", "Logging and Echo channels loaded!")).ConfigureAwait(false);

@@ -242,6 +242,15 @@ namespace SysBot.Pokemon.Discord
 
         private static async Task<IUserMessage> RaidEmbedAsync(ISocketMessageChannel c, byte[] bytes, string fileName, EmbedBuilder embed, int maxRetries = 2)
         {
+            return await RaidEmbedWithComponentsAsync(c, bytes, fileName, embed, components: null, maxRetries: maxRetries).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// V2 raid-embed sender. Same as <see cref="RaidEmbedAsync"/> but also attaches
+        /// a MessageComponent (button row) and auto-creates a strategy thread under the message.
+        /// </summary>
+        private static async Task<IUserMessage> RaidEmbedWithComponentsAsync(ISocketMessageChannel c, byte[] bytes, string fileName, EmbedBuilder embed, MessageComponent? components, int maxRetries = 2)
+        {
             int retryCount = 0;
             while (retryCount < maxRetries)
             {
@@ -250,23 +259,40 @@ namespace SysBot.Pokemon.Discord
                     IUserMessage message;
                     if (bytes is not null && bytes.Length > 0)
                     {
-                        message = await c.SendFileAsync(new MemoryStream(bytes), fileName, "", false, embed: embed.Build()).ConfigureAwait(false);
+                        message = await c.SendFileAsync(new MemoryStream(bytes), fileName, "", false, embed: embed.Build(), components: components).ConfigureAwait(false);
                     }
                     else
                     {
-                        message = await c.SendMessageAsync("", false, embed.Build()).ConfigureAwait(false);
+                        message = await c.SendMessageAsync("", false, embed.Build(), components: components).ConfigureAwait(false);
                     }
-                    return message; // Return the message object instead of a boolean
+
+                    // Best-effort auto-thread under the raid post. Only on real text channels (not DMs/voice).
+                    if (message != null && c is ITextChannel textChannel)
+                    {
+                        try
+                        {
+                            await textChannel.CreateThreadAsync(
+                                name: "Strategy chat",
+                                autoArchiveDuration: ThreadArchiveDuration.OneHour,
+                                message: message).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Threads might be disabled for the channel — non-fatal.
+                            LogUtil.LogInfo($"Auto-thread skipped: {ex.Message}", nameof(RaidEmbedWithComponentsAsync));
+                        }
+                    }
+                    return message!;
                 }
                 catch (Exception ex)
                 {
-                    LogUtil.LogError($"Failed to send embed to channel '{c.Name}' (Attempt {retryCount + 1}): {ex.Message}", nameof(AddEchoChannel));
+                    LogUtil.LogError($"Failed to send embed (V2) to channel '{c.Name}' (Attempt {retryCount + 1}): {ex.Message}", nameof(AddEchoChannel));
                     retryCount++;
                     if (retryCount < maxRetries)
-                        await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false); // Wait for a second before retrying.
+                        await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
                 }
             }
-            return null; // Return null if we couldn't send the message after all retries
+            return null!;
         }
 
         private static void AddEchoChannel(ISocketMessageChannel c, ulong cid)
@@ -277,8 +303,13 @@ namespace SysBot.Pokemon.Discord
             Func<byte[], string, EmbedBuilder, Task<IUserMessage>> rb = (bytes, fileName, embed) =>
                 RaidEmbedAsync(c, bytes, fileName, embed);
 
+            // V2 forwarder: takes optional MessageComponent for buttons.
+            Func<byte[], string, EmbedBuilder, MessageComponent?, Task<IUserMessage>> rb2 = (bytes, fileName, embed, components) =>
+                RaidEmbedWithComponentsAsync(c, bytes, fileName, embed, components);
+
             EchoUtil.Forwarders.Add(l);
             EchoUtil.RaidForwarders.Add(rb);
+            EchoUtil.RaidForwardersV2.Add(rb2);
             var entry = new EchoChannel(cid, c.Name, l, rb);
             Channels.Add(cid, entry);
         }

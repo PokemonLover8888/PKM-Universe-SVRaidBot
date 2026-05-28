@@ -10,6 +10,8 @@ namespace SysBot.Base
         public static readonly List<Action<string>> Forwarders = new();
         public static readonly List<Action<string, Embed>> EmbedForwarders = new();
         public static readonly List<Func<byte[], string, EmbedBuilder, Task<IUserMessage>>> RaidForwarders = new();
+        // V2: same as RaidForwarders but also accepts a MessageComponent (buttons).
+        public static readonly List<Func<byte[], string, EmbedBuilder, MessageComponent?, Task<IUserMessage>>> RaidForwardersV2 = new();
 
         public static void Echo(string message)
         {
@@ -82,6 +84,35 @@ namespace SysBot.Base
                 }
             }
             return sentMessages;
+        }
+
+        /// <summary>
+        /// V2 dispatch: same as <see cref="RaidEmbed"/> but also passes a MessageComponent (button row)
+        /// to channel forwarders. Falls back to plain RaidForwarders if V2 forwarders aren't registered yet.
+        /// </summary>
+        public static async Task<List<IUserMessage>> RaidEmbedWithComponents(byte[] bytes, string fileName, EmbedBuilder embeds, MessageComponent? components)
+        {
+            var sent = new List<IUserMessage>();
+            if (RaidForwardersV2.Count == 0)
+            {
+                // No V2 forwarder registered — silently fall back so callers can opt in without breaking older deployments.
+                return await RaidEmbed(bytes, fileName, embeds).ConfigureAwait(false);
+            }
+            foreach (var fwd in RaidForwardersV2)
+            {
+                try
+                {
+                    var message = await fwd(bytes, fileName, embeds, components);
+                    if (message != null)
+                        sent.Add(message);
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogInfo($"Exception {ex.GetType().Name} in RaidEmbedWithComponents forwarder", "Echo");
+                    LogUtil.LogSafe(ex, "Echo");
+                }
+            }
+            return sent;
         }
     }
 }

@@ -20,13 +20,13 @@ namespace SysBot.Pokemon
         public string Token { get; set; } = string.Empty;
 
         [Category(Startup), Description("List of bot command prefixes")]
-        public System.Collections.Generic.List<string> CommandPrefix { get; set; } = new System.Collections.Generic.List<string> { "$" };
+        public System.Collections.Generic.List<string> CommandPrefix { get; set; } = new System.Collections.Generic.List<string> { "!" };
 
         public void EnsureCommandPrefix()
         {
             if (CommandPrefix.Count == 0)
             {
-                CommandPrefix.Add("$"); // Default prefix if none is set
+                CommandPrefix.Add("!"); // PKM Universe Reborn — raid bot uses ! to avoid clashing with trade-bot $
             }
 
             // If CommandPrefix is a single string, make it a list
@@ -40,7 +40,7 @@ namespace SysBot.Pokemon
         public bool AsyncCommands { get; set; }
 
         [Category(Startup), Description("Custom Status for playing a game.")]
-        public string BotGameStatus { get; set; } = "Hosting S/V Raids";
+        public string BotGameStatus { get; set; } = "PKM Universe Raids · pkm-universe.com";
 
         [Category(Operation), Description("Custom message the bot will reply with when a user says hello to it. Use string formatting to mention the user in the reply.")]
         public string HelloResponse { get; set; } = "Hello, {0}!  I'm online!";
@@ -74,6 +74,10 @@ namespace SysBot.Pokemon
 
         [Category(Channels), Description("Raid Embed Channels.")]
         public RemoteControlAccessList EchoChannels { get; set; } = new();
+
+        [Category(Channels), Description("Channel ID where the weekly leaderboard auto-post lands every Sunday at midnight UTC. 0 = disabled.")]
+        [DisplayName("Weekly Leaderboard Channel ID")]
+        public ulong LeaderboardChannelId { get; set; } = 0;
 
         public AnnouncementSettingsCategory AnnouncementSettings { get; set; } = new();
 

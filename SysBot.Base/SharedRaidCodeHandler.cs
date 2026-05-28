@@ -26,6 +26,25 @@ public static class SharedRaidCodeHandler
     public static Func<ulong, ulong, bool, Task>? UpdateMessageReactionCallback { get; set; }
 
     /// <summary>
+    /// Called when a raid finalizes (win/loss). The Discord layer registers a handler that
+    /// fetches the raid message and edits the embed in place to display the recap.
+    /// (messageId, channelId, recapInfo) → Task
+    /// </summary>
+    public static Func<ulong, ulong, RaidRecapInfo, Task>? PostRaidRecapCallback { get; set; }
+
+    public class RaidRecapInfo
+    {
+        public bool Won { get; set; }
+        public int ClaimantsCount { get; set; }
+        public List<ulong> ClaimantUserIds { get; set; } = new();
+        public string RaidTitle { get; set; } = string.Empty;
+        public bool IsShiny { get; set; }
+        public int CompletedRaidsTotal { get; set; }
+        public int WinCount { get; set; }
+        public int LossCount { get; set; }
+    }
+
+    /// <summary>
     /// Adds a message to the active raid message tracking system
     /// </summary>
     /// <param name="messageId">Discord message ID</param>

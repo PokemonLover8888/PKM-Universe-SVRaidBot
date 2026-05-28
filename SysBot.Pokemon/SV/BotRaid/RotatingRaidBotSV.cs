@@ -1558,12 +1558,53 @@ namespace SysBot.Pokemon.SV.BotRaid
                     Log("Yay! We defeated the raid!");
                     _winCount++;
                     if (raidCountData != null) raidCountData.Wins++;
+                    Helpers.DashboardState.Emit("✓", $"{RaidEmbedInfoHelpers.RaidSpecies} raid won · 4/4");
                 }
                 else
                 {
                     Log("Dang, we lost the raid.");
                     _lossCount++;
                     if (raidCountData != null) raidCountData.Losses++;
+                    Helpers.DashboardState.Emit("✕", $"{RaidEmbedInfoHelpers.RaidSpecies} raid lost");
+                }
+                // Push fresh stats into the Dashboard.
+                Helpers.DashboardState.WinCount       = _winCount;
+                Helpers.DashboardState.LossCount      = _lossCount;
+                Helpers.DashboardState.CompletedTotal = _raidCount;
+
+                // PKM Universe: propagate the result to per-trainer raid history + edit the embed in place.
+                try
+                {
+                    foreach (var activeMsg in SharedRaidCodeHandler.GetAllActiveRaidMessages())
+                    {
+                        int updated = RaidHistoryStore.MarkResult(activeMsg.MessageId, isWon);
+                        if (updated > 0)
+                            Log($"RaidHistory: marked {updated} claim(s) for message {activeMsg.MessageId} as {(isWon ? "Won" : "Lost")}");
+
+                        // Fire the edit-in-place recap callback for the Discord layer.
+                        if (SharedRaidCodeHandler.PostRaidRecapCallback != null)
+                        {
+                            var claimants = RaidHistoryStore
+                                .GetClaimantsForMessage(activeMsg.MessageId)
+                                .ToList();
+                            var recap = new SharedRaidCodeHandler.RaidRecapInfo
+                            {
+                                Won = isWon,
+                                ClaimantsCount = claimants.Count,
+                                ClaimantUserIds = claimants,
+                                RaidTitle = activeMsg.RaidInfoDict.TryGetValue("RaidTitle", out var title) ? title : "Raid",
+                                IsShiny = activeMsg.RaidInfoDict.TryGetValue("IsShiny", out var s) && bool.TryParse(s, out var sb) && sb,
+                                CompletedRaidsTotal = _raidCount,
+                                WinCount = _winCount,
+                                LossCount = _lossCount,
+                            };
+                            _ = SharedRaidCodeHandler.PostRaidRecapCallback(activeMsg.MessageId, activeMsg.ChannelId, recap);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"RaidHistory update skipped: {ex.Message}");
                 }
                 if (raidCountData != null) raidCountData.TotalRaids++;
                 UpdateUptime();
@@ -1573,6 +1614,47 @@ namespace SysBot.Pokemon.SV.BotRaid
             {
                 Log("No trainers available to check win/loss status.");
             }
+        }
+
+        /// <summary>
+        /// Snapshots the currently-hosting raid into <see cref="Helpers.DashboardState"/>
+        /// so the WinForms Dashboard hero card can light up with live data.
+        /// </summary>
+        private void PushDashboardStateFromEmbed(string code, string spriteUrl, bool disband, bool upnext, bool raidstart)
+        {
+            try
+            {
+                bool active = !disband && !upnext;
+                Helpers.DashboardState.HasActiveRaid     = active;
+                Helpers.DashboardState.CurrentSpecies    = RaidEmbedInfoHelpers.RaidSpecies.ToString();
+                Helpers.DashboardState.CurrentForm       = RaidEmbedInfoHelpers.RaidSpeciesForm;
+                Helpers.DashboardState.IsShiny           = RaidEmbedInfoHelpers.IsShiny;
+                Helpers.DashboardState.TeraTypeEnglish   = GetEnglishTypeNameFromLocalized(RaidEmbedInfoHelpers.RaidSpeciesTeraType);
+                Helpers.DashboardState.SpriteUrl         = spriteUrl ?? string.Empty;
+                Helpers.DashboardState.MoveList          = (RaidEmbedInfoHelpers.Moves ?? string.Empty).Replace("\n", " · ");
+                Helpers.DashboardState.MetaLine          = $"{(_settings.ActiveRaids.Count > _currentRaidIndex ? _settings.ActiveRaids[_currentRaidIndex].DifficultyLevel : 0)}-star · Lv {RaidEmbedInfoHelpers.RaidLevel} · {RaidEmbedInfoHelpers.RaidSpeciesNature}";
+                Helpers.DashboardState.Stars             = _settings.ActiveRaids.Count > _currentRaidIndex ? _settings.ActiveRaids[_currentRaidIndex].DifficultyLevel : 0;
+                Helpers.DashboardState.CurrentCode       = string.IsNullOrEmpty(code) ? "—" : code;
+                Helpers.DashboardState.CompletedTotal    = _raidCount;
+                Helpers.DashboardState.WinCount          = _winCount;
+                Helpers.DashboardState.LossCount         = _lossCount;
+                Helpers.DashboardState.UptimeMinutes     = raidCountData?.TotalUptimeMinutes ?? 0;
+
+                // Queue snapshot — next ~5 raids in the rotation
+                var queue = new System.Collections.Generic.List<string>();
+                for (int i = 0; i < Math.Min(5, _settings.ActiveRaids.Count); i++)
+                {
+                    int idx = (_currentRaidIndex + i) % _settings.ActiveRaids.Count;
+                    var r = _settings.ActiveRaids[idx];
+                    queue.Add($"{r.Species} · {new string('★', r.DifficultyLevel)}");
+                }
+                Helpers.DashboardState.SetQueueSnapshot(queue);
+
+                if (raidstart) Helpers.DashboardState.Emit("✓", $"{RaidEmbedInfoHelpers.RaidSpecies} raid starting");
+                else if (active) Helpers.DashboardState.Emit("+", $"Hosting {RaidEmbedInfoHelpers.RaidSpecies}");
+                else if (disband) Helpers.DashboardState.Emit("✕", $"{RaidEmbedInfoHelpers.RaidSpecies} disbanded");
+            }
+            catch (Exception ex) { Log($"PushDashboardState failed: {ex.Message}"); }
         }
 
         private void UpdateUptime()
@@ -3322,7 +3404,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             }
 
             string disclaimer = _settings.ActiveRaids.Count > 1
-                                ? $"notpaldea.net"
+                                ? $"pkm-universe.com"
                                 : "";
 
             var turl = string.Empty;
@@ -3369,11 +3451,18 @@ namespace SysBot.Pokemon.SV.BotRaid
             if (_settings.ActiveRaids[_currentRaidIndex].Species is 0)
                 turl = "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/combat.png";
 
-            // Fetch the dominant color from the image
+            // Fetch the dominant color from the image (used as fallback when Tera color unavailable)
             (int R, int G, int B) dominantColor = await RaidExtensions<PK9>.GetDominantColorAsync(turl).ConfigureAwait(false);
 
-            // Use the dominant color, unless it's a disband or hatTrick situation
-            var embedColor = disband ? Discord.Color.Red : hatTrick ? Discord.Color.Purple : new Discord.Color(dominantColor.R, dominantColor.G, dominantColor.B);
+            // PKM Universe brand: color the embed stripe by Tera type when known, fall back to dominant-color
+            // for raids where the Tera type hasn't been populated yet (e.g. upnext placeholders).
+            string englishTeraTypeForColor = GetEnglishTypeNameFromLocalized(RaidEmbedInfoHelpers.RaidSpeciesTeraType);
+            Discord.Color? teraColor = SysBot.Pokemon.SV.BotRaid.Helpers.PkmUniverseTheme.TeraColor(englishTeraTypeForColor);
+            var embedColor = disband
+                ? Discord.Color.Red
+                : hatTrick
+                    ? Discord.Color.Purple
+                    : (teraColor ?? new Discord.Color(dominantColor.R, dominantColor.G, dominantColor.B));
 
             TimeSpan duration = new(0, 2, 31);
 
@@ -3423,7 +3512,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             // Only include footer if not posting 'upnext' embed with the 'Preparing Raid' title
             if (!(upnext && _settings.RaidSettings.TotalRaidsToHost == 0))
             {
-                string programIconUrl = $"https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/icon4.png";
+                string programIconUrl = $"https://pkm-universe.com/pkm-universe-icon.png";
                 int raidsIn_currentRaidIndex = _hub.Config.RotatingRaidSV.ActiveRaids.Count(r => !r.AddedByRACommand);
 
                 // Calculate uptime from persistent storage
@@ -3623,13 +3712,29 @@ namespace SysBot.Pokemon.SV.BotRaid
                 string fieldName = $"**__{EmbedLanguageManager.GetLocalizedText("Raid Code", language)}__**";
                 string fieldValue = $"{EmbedLanguageManager.GetLocalizedText("React with", language)} ✅ " +
                                   $"{EmbedLanguageManager.GetLocalizedText("to receive the raid code via DM", language)}.\n" +
-                                  $"{EmbedLanguageManager.GetLocalizedText("The code will be sent to you privately", language)}.";
+                                  $"{EmbedLanguageManager.GetLocalizedText("The code will be sent to you privately", language)}.\n" +
+                                  $"*Or click the **🔑 Get Code** button below for one-click delivery.*";
 
                 embed.AddField(fieldName, fieldValue, false);
             }
 
-            // Send the embed to all channels and get list of sent messages
-            var sentMessages = await EchoUtil.RaidEmbed(imageBytes, fileName, embed);
+            // Build a button row for coded raids (PKM Universe upgrade — replaces the ✅ reaction with one-click).
+            // Reactions still work because the existing handler stays registered; the button is additive.
+            Discord.MessageComponent? raidComponents = null;
+            if (!disband && names is null && !upnext && !raidstart && code != "Free For All" && _settings.EmbedToggles.HideRaidCode)
+            {
+                raidComponents = new Discord.ComponentBuilder()
+                    .WithButton("Get Code",  "raid_get_code",  Discord.ButtonStyle.Primary,   new Discord.Emoji("🔑"))
+                    .WithButton("Rules",     "raid_rules",     Discord.ButtonStyle.Secondary, new Discord.Emoji("📜"))
+                    .WithButton("pkm-universe.com", style: Discord.ButtonStyle.Link, url: "https://pkm-universe.com")
+                    .Build();
+            }
+
+            // Push current raid state to the WinForms Dashboard so the hero card lights up.
+            PushDashboardStateFromEmbed(code, turl, disband, upnext, raidstart);
+
+            // Send the embed to all channels (V2 path attaches the button row + auto-creates a strategy thread).
+            var sentMessages = await EchoUtil.RaidEmbedWithComponents(imageBytes, fileName, embed, raidComponents);
 
             // Only use reaction system if HideRaidCode is true
             bool isInitialCodedRaidAnnouncement =
@@ -5162,7 +5267,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             var disclaimer = $"Current Position: {queuePosition}";
             var titlePrefix = raid.IsShiny ? "Shiny " : "";
             var formName = ShowdownParsing.GetStringFromForm(pk.Form, strings, pk.Species, pk.Context);
-            var authorName = $"{stars} ★ {titlePrefix}{strings.Species[encounter.Species]}{(pk.Form != 0 ? $"-{formName}" : "")}{(isEvent ? " (Event Raid)" : "")}";
+            var visualStars = SysBot.Pokemon.SV.BotRaid.Helpers.PkmUniverseTheme.VisualStars(stars);
+            var authorName = $"{visualStars} {titlePrefix}{strings.Species[encounter.Species]}{(pk.Form != 0 ? $"-{formName}" : "")}{(isEvent ? " (Event Raid)" : "")}";
 
             (int R, int G, int B) = RaidExtensions<PK9>.GetDominantColorAsync(RaidExtensions<PK9>.PokeImg(pk, false, false)).ConfigureAwait(false).GetAwaiter().GetResult();
             var embedColor = new Color(R, G, B);
@@ -5207,7 +5313,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 embed.AddField("**__Special Rewards__**", "No special rewards available", true);
             }
 
-            var programIconUrl = "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/icon4.png";
+            var programIconUrl = "https://pkm-universe.com/pkm-universe-icon.png";
             embed.WithFooter(new EmbedFooterBuilder()
             {
                 Text = disclaimer,
@@ -5249,7 +5355,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             }
             string englishSpecialRewards = GetSpecialRewards(reward, rewardsToShow, 2);
             string englishFormName = ShowdownParsing.GetStringFromForm(pk.Form, englishStrings, pk.Species, pk.Context);
-            string englishAuthorName = $"{stars} ★ {titlePrefix}{englishStrings.Species[encounter.Species]}{(pk.Form != 0 ? $"-{englishFormName}" : "")}{(isEvent ? " (Event Raid)" : "")}";
+            string englishAuthorName = $"{SysBot.Pokemon.SV.BotRaid.Helpers.PkmUniverseTheme.VisualStars(stars)} {titlePrefix}{englishStrings.Species[encounter.Species]}{(pk.Form != 0 ? $"-{englishFormName}" : "")}{(isEvent ? " (Event Raid)" : "")}";
             RaidEmbedEnglishHelpers.RaidEmbedTitle = englishAuthorName;
             RaidEmbedEnglishHelpers.RaidSpeciesGender = pk.Gender == 0 ? "Male" : (pk.Gender == 1 ? "Female" : "Genderless");
             RaidEmbedEnglishHelpers.RaidSpeciesAbility = englishStrings.Ability[pk.Ability];
