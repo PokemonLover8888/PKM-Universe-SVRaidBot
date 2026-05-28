@@ -10,7 +10,12 @@ namespace SysBot.Pokemon.WinForms
 {
     internal static class Program
     {
-        public static readonly string WorkingDirectory = Application.StartupPath;
+        // IMPORTANT: with a self-extracting single-file publish, Application.StartupPath and
+        // AppContext.BaseDirectory point at a RANDOM temp extraction folder that changes every
+        // launch — so config/history/logs written there never persist. Environment.ProcessPath
+        // returns the real EXE path (the bot folder), which is what we want for all persisted data.
+        public static readonly string WorkingDirectory =
+            Path.GetDirectoryName(Environment.ProcessPath) ?? Application.StartupPath;
         public static string ConfigPath { get; private set; } = Path.Combine(WorkingDirectory, "config.json");
 
         // Win32 helpers for finding/restoring the existing window when a duplicate launch is blocked.

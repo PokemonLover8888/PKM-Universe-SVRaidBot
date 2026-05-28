@@ -22,8 +22,10 @@ namespace SysBot.Base
                 return;
 
             var config = new LoggingConfiguration();
-            // Anchor logs next to the EXE so launching from any CWD (e.g. system32 via Start menu) works.
-            var logsDir = Path.Combine(AppContext.BaseDirectory, "logs");
+            // Anchor logs next to the REAL EXE (Environment.ProcessPath), not AppContext.BaseDirectory —
+            // the latter is a throwaway temp extraction dir for self-extracting single-file builds.
+            var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+            var logsDir = Path.Combine(exeDir, "logs");
             Directory.CreateDirectory(logsDir);
             var logfile = new FileTarget("logfile")
             {
