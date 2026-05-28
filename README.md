@@ -1,34 +1,65 @@
-![GitHub Release](https://img.shields.io/github/v/release/hexbyt3/Svraidbot)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/hexbyt3/Svraidbot/total?color=violet)
+<div align="center">
 
+<img src="https://pkm-universe.com/pkm-universe-icon.png" width="120" alt="PKM Universe" />
 
-# Sc/Vi RaidBot
- 
-## Hello, and welcome to my RaidBot Project.
+# PKM Universe Raid System
 
-![image](https://github.com/user-attachments/assets/9d9b5244-9403-420d-8099-c6579b503073)
-![image](https://github.com/user-attachments/assets/023ba97e-0189-435d-9271-c7b3a1be7e54)
-![image](https://github.com/user-attachments/assets/cba6f9c1-ee80-4ef2-9853-527ae06e9a23)
+### Automated Scarlet/Violet Tera Raid hosting for **PKM Universe Reborn**
 
+[![Website](https://img.shields.io/badge/web-pkm--universe.com-d4af37)](https://pkm-universe.com)
+[![Discord](https://img.shields.io/badge/discord-PKM%20Universe%20Reborn-5865f2)](https://discord.gg/pkm-universe-reborn)
+![Built on](https://img.shields.io/badge/fork%20of-hexbyt3%2FSVRaidBot-555)
 
-# How-To Video
-https://youtu.be/wlFE04oiqGs?si=EDoVRaocGyCapN9n
+</div>
 
+---
 
-# 📱 Access SVRaidBot from Any Device on Your Network
+> A private, rebranded fork of [hexbyt3/SVRaidBot](https://github.com/hexbyt3/SVRaidBot) tailored for the PKM Universe Reborn community. Branded **Raid-SV**, gold-themed, with a custom dashboard, Discord button UX, per-trainer history, and an auto-posted weekly leaderboard.
 
-![image](https://github.com/user-attachments/assets/cc4eb0f2-f3f7-4ee7-82f2-b771f6fbbd56)
+<!-- SCREENSHOTS: drag-drop your own Dashboard / embed / Configuration screenshots here in the GitHub README editor. -->
+<!-- Suggested order: 1) Dashboard hero card, 2) a raid embed with buttons, 3) the Configuration inner-sidebar. -->
+
+---
+
+## What's different from upstream
+
+This fork keeps everything hexbyte's SVRaidBot does and adds a PKM Universe layer on top:
+
+### Branding & UI
+- **Gold theme** (`#d4af37`) throughout — window, embeds, buttons
+- **Raid-SV** window/tray/EXE title with the PKM Universe icon
+- **`!` command prefix** by default (so it doesn't clash with the `$` trade bots)
+- **Dashboard view** — animated empty state, live hero card (sprite, raid code, circular countdown ring, joined-trainer dots), Stats / Queue / Connection cards with a sparkline, and a live activity feed rail
+- **Configuration page** rebuilt with an inner sidebar (General / Discord / Raids / Embed / Lobby / Advanced) and a searchable, reflection-driven settings form — no more raw PropertyGrid
+
+### Discord experience
+- **Buttons** beneath every raid embed: `🔑 Get Code`, `📜 Rules`, `🔗 pkm-universe.com` — one click instead of reacting
+- **Verified-gate** — only members with the configured raid role can claim codes (admins/sudo bypass)
+- **Auto-threads** — each raid embed spawns a "Strategy chat" thread
+- **Edit-in-place recap** — when a raid ends, the original embed turns green/red, shows `RAID WON/FAILED` + the trainer list, and updates the running win-rate
+- **Tera-typed embed color** + visual `★★★` star ratings
+
+### Community features
+- **`!myraids`** — your last 20 claimed raids with win/loss and win-rate
+- **`!leaderboard [week|month|all]`** — top 10 raid joiners with medals
+- **Weekly auto-posted leaderboard** — pinned every Sunday (set the channel in Config → Discord → `Weekly Leaderboard Channel ID`)
+
+### Robustness
+- Single-instance guard (no more stacked processes), restore-from-tray on relaunch, self-cleaning `.port` files, and logs anchored next to the EXE
+
+---
+
+# 📱 Access from Any Device on Your Network
 
 ## Quick Setup
 
 ### 1. Enable Network Access (choose one):
-- **Option A:** Right-click SVRaidBot.exe → Run as Administrator
+- **Option A:** Right-click `PKM-Universe-Raid.exe` → Run as Administrator
 - **Option B:** Run in admin cmd: `netsh http add urlacl url=http://+:9090/ user=Everyone`
 
 ### 2. Allow Through Firewall:
-Run in admin cmd:
 ```cmd
-netsh advfirewall firewall add rule name="SVRaidBot Web" dir=in action=allow protocol=TCP localport=9090
+netsh advfirewall firewall add rule name="Raid-SV Web" dir=in action=allow protocol=TCP localport=9090
 ```
 
 ### 3. Connect From Your Phone:
@@ -37,141 +68,82 @@ netsh advfirewall firewall add rule name="SVRaidBot Web" dir=in action=allow pro
 - Example: `http://192.168.1.100:9090`
 
 ## Requirements
-- Same WiFi network
-- Windows Firewall rule (step 2)
-- Admin rights (first time only)
+- Same WiFi network · Windows Firewall rule (step 2) · Admin rights (first time only)
 
 ---
 
+# Features
 
-# __Features__
-## Auto Teleport 
-- Teleports user to the nearest raid den if raid den is lost.
+## Auto Teleport
+Teleports to the nearest raid den if the den is lost.
+
 ## Raid Requests
-__Adding Requests__
- - Users can request their own raids using command `ra <seed> <difficulty> <storyprogress>`.
- - I have an online seed finder located here for your users to use: [https://genpkm.com/raids/seeds/](https://genpkm.com/raids/seeds/index.php)
-   
-__Removing Request__
-- Users can remove thier raid request by simply typing the `rqc` command.  This removes them from the queue.
-  
-__RaidView__
-- Users can view a raid embed with all the details of the raid including stats, rewards, and more!  Command `rv <seed> <difficulty> <storyprogress>`
-  
-__Disable Requests__
-- The bot owner can enable or disable requesting raids at the click of a button.
-  
-__Limit Requests__
- - The bot owner can decide how many requests a user can submit in a certain time limit if they wish.
-   
+- **Add:** `!ra <seed> <difficulty> <storyprogress>`
+- **Remove:** `!rqc` (removes you from the queue)
+- **Preview:** `!rv <seed> <difficulty> <storyprogress>` shows the full raid embed
+- **Disable / Limit:** the bot owner can toggle requests or cap them per user/time window
+
 ## Full Event Support
-- Users can request an active event they want.  The bot will auto teleport your player to the nearest Event den and proceed with overwriting the seed.
-- Auto Detects Might and Distribution Group ID's to be used. 
+Request an active event; the bot teleports to the nearest Event den and overwrites the seed. Auto-detects Might and Distribution group IDs.
+
 ## Mystery Raids
-- Don't have time to come up with your own raids to add to the list?  Turn on the Mystery Raids function and get a random shiny raid each time!
+Turn on Mystery Raids for a random shiny raid each rotation.
+
 ## Disable Overworld Spawns
-- Tired of your player getting in random battles with overworld pokemon?  Turn this feature on and there will be no more overworld spawns to deal with!
+Stops wild overworld encounters between raids.
+
 ## Embed Settings
-- Tons of embed settings for the bot owner to choose from.  Customize it your way!
-## Auto Story Progress 
-- StoryProgress will automatically edit the game flags to change the story progress for you per raid!  No need for two bots anymore for "baby" raids and "adult" raids!  
+Extensive embed customization — language, type icons, screenshots, code privacy, and more.
 
-# __SV Raid Bot Guide__
+## Auto Story Progress
+Automatically edits game flags per raid — no need for separate "baby" and "adult" bots.
 
- - **ActiveRaids**
-  - Changing Battle Pokémon - Inside of the collection editor is where all of your requested and auto rotate Pokémon live.  You can change the bots Pokémon by editing the `PartyPK` setting and opening up the editor.  Here, you will put in your desired showdown format for the Pokémon you wish the bot to use for the raid.  The bot will use that Pokémon for that raid only.  Once the raid is done, the original Pokémon that you had first in your party will be used in the next raid unless the next raid also has a PartyPK filled out.
-  - New 4/27/25 - When starting the program for the first time, the bot will automatically add two random shiny raids to your ActiveRaids list.  That way, you don't have to figure out how to add raids and can start right away, especially if you turn the Mystery Raid feature on.  This makes the program a lot more beginner friendly.
+---
+
+# Raid Bot Guide
+
+- **ActiveRaids** — the rotation list. Edit `PartyPK` on an entry to use a specific Showdown set for that raid only. On first launch the bot seeds two random shiny raids so you can start immediately.
 - **RaidSettings**
- - GenerateRaidsFromFile - Set this to `True` and add your own seeds that you want rotated to this file.  When you start up the program for the first time, it will create a new folder called `raidfilessv`    for you and add the `raidsv.txt` file to it.  You will open this file, and add your seeds to it like this `<seed>-<speciesname>-<stars/difficulty>-<storyprogresslevel>`
-   - Example:  If i'm looking at Raidcalc and your settings were  Story Progress: 4* Unlocked and Stars: 3, you would add that seed in as `3739A70B-Goomy-3-4`
-   - As of 10/25/23 I include two templates for you in the folder - paldeaseeds.txt and kitakamiseeds.txt - you can copy those seeds and add to your raidsv.txt file as a starting point.
-  - Save `raidsv.txt` with your new changes.
-  - Start NotRaidBot and the list from raidsv.txt will now begin to populate the list inside of the setting `ActiveRaids`.  
- - SaveSeedsToFile - Set to true so that the bot saves a back up of your current ActiveRaids so you can paste them back to raidsv.txt if you ever need to.
- - RandomRotation - Set to true if you want the bot to do random raids in your ActiveRaids list while also keeping Requested raids a priority.
- - MysteryRaids - Set to true for the bot to randomly inject a shiny raid.  Cannot be used with RandomRotation on.
- - DisableRequests - Disables users from being able to request raids.
- - DisableOverworldSpawns - Stops wild pokemon from spawning in overworld if set to true.  Set back to false to make pokemon spawn.
- - KeepDaySeed - Set this to True so that the bot will inject the correct Today Seed if it rolls over to tomorrow.
- - EnableTimeRollback - Set to true for bot to roll time back 5 hours to prevent the day from changing.
-
-- **Embed Toggles**
- - RaidEmbedDescription - add any text you want to show on *all* embeds posted at the top.  
- - SelectedTeraIconType - This changes the icons used in your embed.  Icon1 are custom tera icons that look amazing.
- - IncludeMoves - set to true if you want to show the moves the raid mon will have in the embed.
- - IncludeRewards - set to true if you want to show the rewards the raid mon will have in the embed.
- - IncludeSeed - Set to true to show the current raid seed in the embed.
- - IncludeCountdown - Set to true to show time until Raid starts in embed.
- - IncludeTypeAdvantage - Set to true to show super effective types in embed.
- - RewardsToShow - A list of rewards you want to show on your embeds.
- - RequestEmbedTime - Time to wait to post user requested raids to public channel.
- - TakeScreenShot - Set to true to show screenshot of the game in your embeds.
- - ScreenshotTiming - Set to 1500ms or 22000ms to take different screenshots once in raid.
- - HideRaidCode - Hides raid code from embed.
-
-- **EventSettings**
- - EventActive - Set to true if Event is active (Might or Distribution).  The bot will auto set this if Event is detected.
- - RaidDeliveryGroupID - The Event Index of the current Event goes here.  The bot will auto set this if Event is detected. 
-
-- **LobbyOptions**
- - LobbyMethod
-  -  SkipRaid and it will just skip the raid if it's empty after the specified times defined in `SkipRaidLimit`
-  - Continue - will just continue posting the same raid until someone joins.  
-  - OpenLobby - will open the lobby as Free For All after X amount of Empty Lobbies.
- - Action - Set this to `MashA` so that the bot presses "A" in the game every 3.5s in battle.  `AFK` means the bot will not do anything.
- - ExtraTimeLobbyDisband - once lobby is disbanded, add extra time to return to overworld if needed.  
- - ExtraTimePartyPK - Extra time to wait to switch your lead raid mon to battle with.  Slow switches only.
-
-- **RaiderBanList**
- - List - This is where all NID's of banned people go.  Use `ban <playername or NID>` to ban or add them manually here.
- - AllowIfEmpty - Keep false.
-
-- **MiscSettings**
- - DateTimeFormat - Set the time format as it appears on your switch. 
- - UseOvershoot - If true, bot will use overshoot method instead of pressing DDown to get to date/time settings.  If true, be sure to ConfigureRolloverCorrection.
- - DDownClicks - Times bot needs to press DDown to get to Date/Time Settings.
- - ScreenOff - Turns your screen off while playing to preserve LED/Power.   Or use commands `screenOff` or `screenOn`.
+  - `GenerateRaidsFromFile` — `True` reads seeds from `raidfilessv/raidsv.txt` in the format `<seed>-<species>-<stars>-<storyprogress>` (e.g. `3739A70B-Goomy-3-4`)
+  - `SaveSeedsToFile` — back up ActiveRaids to file
+  - `RandomRotation` — shuffle the list (requests still prioritized)
+  - `MysteryRaids` — inject random shiny raids (mutually exclusive with RandomRotation)
+  - `KeepDaySeed` / `EnableTimeRollback` — keep the day seed stable
+- **Embed Toggles** — RaidEmbedDescription, tera icon style, IncludeMoves/Rewards/Seed/Countdown/TypeAdvantage, screenshots, `HideRaidCode`
+- **LobbyOptions** — `SkipRaid` / `Continue` / `OpenLobby` methods, `MashA` vs `AFK` action, extra disband/party timing
+- **RaiderBanList** — `!ban <name|NID>` to ban; keep `AllowIfEmpty` false
 - **DiscordSettings**
-- Token - Add your discord bot token you got from the [Discord Developer Portal](<https://discord.com/developers/applications/>)
-- CommandPrefix - the prefix your bot will use for commands.  Common is $
-- RoleSudo - Tell the bot who it's daddy (or mommy) is.  Go to your server in a channel the bot has permission to read and type `$sudo @YOURUSERNAME`.  The bot is now under your command.
-- ChannelWhitelist - these are channels that you want your bot to listen to commands in.  Use `$addchannel` to add a channel to the bot automatically.
-- LoggingChannels - if you want to log all the stuff your bot puts in the Log Tab of the program but in a channel, use the `$loghere` command.
-- EchoChannels - These are channels you want your raid embeds to post to.  Use command `$aec` to add the channel to this list.
+  - `Token` — from the [Discord Developer Portal](https://discord.com/developers/applications/)
+  - `CommandPrefix` — default `!`
+  - `RoleSudo` — `!sudo @you` to claim owner control
+  - `RoleRaidRequest` — members with this role can claim raid codes (the verified-gate)
+  - `ChannelWhitelist` — `!addchannel`
+  - `LoggingChannels` — `!loghere`
+  - `EchoChannels` — `!aec` (where raid embeds post)
+  - `LeaderboardChannelId` — where the weekly leaderboard auto-posts (0 = disabled)
 
-## __Announcement Settings__
+## Announcement Settings
+`!announce TEXT` sends a styled embed to all servers using the bot. Configure thumbnail, color, and randomization options.
 
-This is helpful if your bot is in several servers and you need to let everyone know that's using it that the bot is online, offline, napping, etc. without having to send out tons of messages yourself.  Just use the `$announce TEXT HERE`command to send out a nice announcement wrapped in a beautiful embed with your choice of thumbnail image and color.
-- AnnouncementThumbnailOption - Set this to your fave pokemon image that i've premade.
-- CustomAnnouncementThumbnailURL - Put the url to your own thumbnail image if you don't like mine.
-- AnnouncementEmbedColor - Self explanatory.
-- RandomAnnouncementThumbnail - set to true if you want it to use random images from my custom thumbnails.  Does not work if you have a custom image you're using.
-- RandomAnnouncementColor - Let the bot choose from the list what color the embed will be this time.
+---
 
-# __In-Game Set Up__
+# In-Game Setup
 - Stand in front of your raid crystal
-- In game Options, make sure of the following:
- -  `Give Nicknames` is Off
- - `SendToBoxes` is `Automatic`(in case bot catches raid mon)
- - Auto Save is `Off`
- - Text Speed is `Fast`
+- Game options: `Give Nicknames` Off · `Send to Boxes` Automatic · `Auto Save` Off · `Text Speed` Fast
 - Start the bot
 
-## __Program Setup__
-- Enter raid description as you like or leave it blank
-- To post raid embeds in a specific channel use the `aec` command.
-- Paste your raid's seed in the Seed parameter.
-- **Code the raid**
- - Set to true if you want a coded raid
-- **TimeToWait**
- - Total time to wait before attempting to enter the raid.
-- **DateTimeFormat**
- - Set the proper date/time format in your settings for when its time to apply rollover correction.
-- **TimeToScrollDownForRollover**
- - For this you want to OVERSHOOT the Date/Time setting
- - ~800 is for Lites, ~950 for OLEDs, and ~920 for V1s
- - Time will vary for everyone.
-- **ConfigureRolloverCorrection**
- - If true will only run the rollovercorrection routine for you to figure out your timing
- - Run this when the game is closed.
+## Program Setup
+- Enter a raid description (or leave blank)
+- `!aec` to post embeds in a specific channel
+- Paste your seed into the Seed parameter; set **Code the raid** if you want a private code
+- Set `DateTimeFormat`, `TimeToScrollDownForRollover` (~800 Lite / ~950 OLED / ~920 V1), and run `ConfigureRolloverCorrection` once (game closed) to dial in timing
 
+---
+
+<div align="center">
+
+**PKM Universe Reborn** · [pkm-universe.com](https://pkm-universe.com)
+
+Built on [hexbyt3/SVRaidBot](https://github.com/hexbyt3/SVRaidBot) · Licensed under AGPL-3.0
+
+</div>
