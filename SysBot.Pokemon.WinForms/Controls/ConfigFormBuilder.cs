@@ -58,12 +58,14 @@ public static class ConfigFormBuilder
 
         var state = new HostState { Host = host };
 
-        // Use a TableLayoutPanel for explicit row sizing — eliminates Dock=Top ordering bugs.
+        // Two-row chrome: search bar (fixed) + content (fill). The breadcrumb is rendered
+        // INSIDE the content area as its top element (see RenderCurrent) so it never clips
+        // from a toggling row height.
         var chrome = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 2,
             BackColor = Color.Transparent,
             Padding = new Padding(0),
             Margin = new Padding(0),
@@ -72,8 +74,7 @@ public static class ConfigFormBuilder
         chrome.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         chrome.RowStyles.Clear();
         chrome.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // Row 0: search bar
-        chrome.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));    // Row 1: breadcrumb (height set dynamically)
-        chrome.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // Row 2: content area
+        chrome.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // Row 1: content area
 
         // === Row 0: Search bar in a visible gold-bordered host ===
         var searchHost = new Panel
@@ -112,17 +113,7 @@ public static class ConfigFormBuilder
         searchHost.Controls.Add(searchIcon);
         chrome.Controls.Add(searchHost, 0, 0);
 
-        // === Row 1: Breadcrumb bar (shown when drilled in) ===
-        var crumbBar = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.Transparent,
-            Visible = false,
-        };
-        state.BreadcrumbBar = crumbBar;
-        chrome.Controls.Add(crumbBar, 0, 1);
-
-        // === Row 2: Content area (scrolls if categories overflow) ===
+        // === Row 1: Content area (scrolls if categories overflow; breadcrumb rendered inside) ===
         var contentArea = new Panel
         {
             Dock = DockStyle.Fill,
@@ -131,7 +122,7 @@ public static class ConfigFormBuilder
             Margin = new Padding(0),
         };
         state.ContentArea = contentArea;
-        chrome.Controls.Add(contentArea, 0, 2);
+        chrome.Controls.Add(contentArea, 0, 1);
 
         host.Controls.Add(chrome);
 
@@ -158,54 +149,6 @@ public static class ConfigFormBuilder
         var current = state.Stack.Peek();
         state.ContentArea.SuspendLayout();
         state.ContentArea.Controls.Clear();
-
-        // --- Breadcrumb display ---
-        // Adjust the breadcrumb row height on the parent TableLayoutPanel
-        if (state.BreadcrumbBar.Parent is TableLayoutPanel tlp)
-        {
-            int rowIdx = tlp.GetRow(state.BreadcrumbBar);
-            if (rowIdx >= 0 && rowIdx < tlp.RowStyles.Count)
-                tlp.RowStyles[rowIdx].Height = (state.Stack.Count > 1) ? 36 : 0;
-        }
-        if (state.Stack.Count > 1)
-        {
-            state.BreadcrumbBar.Visible = true;
-            state.BreadcrumbBar.Controls.Clear();
-            var back = new Button
-            {
-                Text = "◀ Back",
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Gold,
-                BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 10F),
-                Cursor = Cursors.Hand,
-                Width = 80,
-                Height = 28,
-                TextAlign = ContentAlignment.MiddleLeft,
-            };
-            back.FlatAppearance.BorderSize = 0;
-            back.FlatAppearance.MouseOverBackColor = HoverBg;
-            back.Click += (s, e) =>
-            {
-                state.Stack.Pop();
-                RenderCurrent(state);
-            };
-            var crumb = new Label
-            {
-                Text = string.Join("  ›  ", state.Stack.Reverse().Select(f => f.Label)),
-                ForeColor = TextMuted,
-                Font = new Font("Segoe UI", 9.5F),
-                AutoSize = true,
-                Location = new Point(90, 6),
-                BackColor = Color.Transparent,
-            };
-            state.BreadcrumbBar.Controls.Add(crumb);
-            state.BreadcrumbBar.Controls.Add(back);
-        }
-        else
-        {
-            state.BreadcrumbBar.Visible = false;
-        }
 
         // --- Collect direct (non-recursive) properties of the current target, group by category ---
         var props = current.Target.GetType()
@@ -255,7 +198,51 @@ public static class ConfigFormBuilder
         foreach (var group in groups)
             state.ContentArea.Controls.Add(BuildCategorySection(group.Key, group.Reverse().ToList(), current.Target, state));
 
+        // Breadcrumb goes LAST so (Dock=Top) it lands at the very top of the content area.
+        if (state.Stack.Count > 1)
+            state.ContentArea.Controls.Add(BuildBreadcrumb(state));
+
         state.ContentArea.ResumeLayout(true);
+    }
+
+    /// <summary>Breadcrumb row rendered at the top of the content area when drilled into a nested object.</summary>
+    private static Panel BuildBreadcrumb(HostState state)
+    {
+        var bar = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 44,
+            BackColor = CardBg,
+            Margin = new Padding(0, 0, 0, 10),
+        };
+        var back = new Button
+        {
+            Text = "◀  Back",
+            FlatStyle = FlatStyle.Flat,
+            ForeColor = Gold,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            Dock = DockStyle.Left,
+            Width = 90,
+        };
+        back.FlatAppearance.BorderSize = 1;
+        back.FlatAppearance.BorderColor = GoldDim;
+        back.FlatAppearance.MouseOverBackColor = HoverBg;
+        back.Click += (s, e) => { state.Stack.Pop(); RenderCurrent(state); };
+
+        var crumb = new Label
+        {
+            Text = "  " + string.Join("   ›   ", state.Stack.Reverse().Select(f => f.Label)),
+            ForeColor = TextMuted,
+            Font = new Font("Segoe UI", 9.5F),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            BackColor = Color.Transparent,
+        };
+        bar.Controls.Add(crumb);
+        bar.Controls.Add(back);
+        return bar;
     }
 
     // ===== category section =====
