@@ -119,6 +119,8 @@ public static class ConfigFormBuilder
             Dock = DockStyle.Fill,
             BackColor = Color.Transparent,
             AutoScroll = true,
+            // Top padding so the first category header clears the divider/search above it.
+            Padding = new Padding(0, 14, 0, 0),
             Margin = new Padding(0),
         };
         state.ContentArea = contentArea;
