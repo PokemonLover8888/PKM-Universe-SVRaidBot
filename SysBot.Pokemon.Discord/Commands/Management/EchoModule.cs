@@ -70,15 +70,25 @@ namespace SysBot.Pokemon.Discord
         private static readonly Dictionary<ulong, EchoChannel> Channels = new();
         private static readonly Dictionary<ulong, EncounterEchoChannel> EncounterChannels = new();
 
+        private static DiscordSocketClient? _client;
+
         public static void RestoreChannels(DiscordSocketClient discord, DiscordSettings cfg)
         {
             Settings = cfg;
+            _client = discord;
             foreach (var ch in cfg.EchoChannels)
             {
                 if (discord.GetChannel(ch.ID) is ISocketMessageChannel c)
                     AddEchoChannel(c, ch.ID);
             }
-            // EchoUtil.Echo("Added echo notification to Discord channel(s) on Bot startup.");
+
+            // Region-routing: let the bot post a raid embed to ONE channel by ID.
+            EchoUtil.PostToChannel = async (channelId, bytes, fileName, embed, components) =>
+            {
+                if (_client == null || channelId == 0) return null;
+                if (await _client.GetChannelAsync(channelId) is not ISocketMessageChannel c) return null;
+                return await RaidEmbedWithComponentsAsync(c, bytes, fileName, embed, components);
+            };
         }
 
         [Command("Announce", RunMode = RunMode.Async)]

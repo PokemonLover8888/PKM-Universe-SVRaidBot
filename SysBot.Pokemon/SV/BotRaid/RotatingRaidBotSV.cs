@@ -1657,6 +1657,18 @@ namespace SysBot.Pokemon.SV.BotRaid
             catch (Exception ex) { Log($"PushDashboardState failed: {ex.Message}"); }
         }
 
+        /// <summary>
+        /// PKM Universe region-routing: returns the configured Discord channel ID for the bot's
+        /// current region (Paldea / Kitakami / Blueberry), or 0 to fall back to default echo channels.
+        /// </summary>
+        private ulong ResolveRegionChannelId()
+        {
+            var d = _hub.Config.Discord;
+            if (IsKitakami)  return d.KitakamiRaidChannelId;
+            if (IsBlueberry) return d.BlueberryRaidChannelId;
+            return d.PaldeaRaidChannelId; // both false = Paldea
+        }
+
         private void UpdateUptime()
         {
             if (raidCountData == null || raidStorage == null) return;
@@ -3755,8 +3767,24 @@ namespace SysBot.Pokemon.SV.BotRaid
             // Push current raid state to the WinForms Dashboard so the hero card lights up.
             PushDashboardStateFromEmbed(code, turl, disband, upnext, raidstart);
 
-            // Send the embed to all channels (V2 path attaches the button row + auto-creates a strategy thread).
-            var sentMessages = await EchoUtil.RaidEmbedWithComponents(imageBytes, fileName, embed, raidComponents);
+            // PKM Universe region-routing: if a channel is configured for the bot's current region,
+            // post the raid there only. Otherwise fall back to the normal echo-channel broadcast.
+            List<IUserMessage> sentMessages;
+            ulong routeChannel = ResolveRegionChannelId();
+            if (routeChannel != 0)
+            {
+                sentMessages = new List<IUserMessage>();
+                var msg = await EchoUtil.RaidEmbedToChannel(routeChannel, imageBytes, fileName, embed, raidComponents);
+                if (msg != null) sentMessages.Add(msg);
+                // If the region channel send failed (bad ID / perms), fall back so a raid is never silently dropped.
+                if (sentMessages.Count == 0)
+                    sentMessages = await EchoUtil.RaidEmbedWithComponents(imageBytes, fileName, embed, raidComponents);
+            }
+            else
+            {
+                // Send the embed to all channels (V2 path attaches the button row + auto-creates a strategy thread).
+                sentMessages = await EchoUtil.RaidEmbedWithComponents(imageBytes, fileName, embed, raidComponents);
+            }
 
             // Only use reaction system if HideRaidCode is true
             bool isInitialCodedRaidAnnouncement =

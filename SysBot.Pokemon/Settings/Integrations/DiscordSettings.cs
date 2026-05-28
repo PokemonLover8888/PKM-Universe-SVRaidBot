@@ -79,6 +79,18 @@ namespace SysBot.Pokemon
         [DisplayName("Weekly Leaderboard Channel ID")]
         public ulong LeaderboardChannelId { get; set; } = 0;
 
+        [Category(Channels), Description("PKM Universe region-routing: raids hosted in PALDEA post here. 0 = use the default Echo Channels instead.")]
+        [DisplayName("Paldea Raid Channel ID")]
+        public ulong PaldeaRaidChannelId { get; set; } = 0;
+
+        [Category(Channels), Description("PKM Universe region-routing: raids hosted in KITAKAMI (Teal Mask) post here. 0 = use the default Echo Channels instead.")]
+        [DisplayName("Kitakami Raid Channel ID")]
+        public ulong KitakamiRaidChannelId { get; set; } = 0;
+
+        [Category(Channels), Description("PKM Universe region-routing: raids hosted in BLUEBERRY (Indigo Disk) post here. 0 = use the default Echo Channels instead.")]
+        [DisplayName("Blueberry Raid Channel ID")]
+        public ulong BlueberryRaidChannelId { get; set; } = 0;
+
         public AnnouncementSettingsCategory AnnouncementSettings { get; set; } = new();
 
         [Category(Operation), TypeConverter(typeof(CategoryConverter<AnnouncementSettingsCategory>))]

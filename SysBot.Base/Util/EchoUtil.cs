@@ -12,6 +12,17 @@ namespace SysBot.Base
         public static readonly List<Func<byte[], string, EmbedBuilder, Task<IUserMessage>>> RaidForwarders = new();
         // V2: same as RaidForwarders but also accepts a MessageComponent (buttons).
         public static readonly List<Func<byte[], string, EmbedBuilder, MessageComponent?, Task<IUserMessage>>> RaidForwardersV2 = new();
+        // Region-routing: post a raid embed to ONE specific channel by ID (Discord layer registers this).
+        // (channelId, bytes, fileName, embed, components) → message
+        public static Func<ulong, byte[], string, EmbedBuilder, MessageComponent?, Task<IUserMessage?>>? PostToChannel { get; set; }
+
+        /// <summary>Post a raid embed to a single channel by ID. Returns null if no handler / channel unavailable.</summary>
+        public static async Task<IUserMessage?> RaidEmbedToChannel(ulong channelId, byte[] bytes, string fileName, EmbedBuilder embed, MessageComponent? components)
+        {
+            if (PostToChannel == null) return null;
+            try { return await PostToChannel(channelId, bytes, fileName, embed, components); }
+            catch (Exception ex) { LogUtil.LogInfo($"RaidEmbedToChannel failed: {ex.Message}", "Echo"); return null; }
+        }
 
         public static void Echo(string message)
         {
