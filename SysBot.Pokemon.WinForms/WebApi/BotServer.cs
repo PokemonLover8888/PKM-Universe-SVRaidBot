@@ -12,6 +12,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SysBot.Base;
+using SysBot.Pokemon;
+using SysBot.Pokemon.SV.BotRaid;
+using SysBot.Pokemon.SV.BotRaid.Helpers;
+using PKHeX.Core;
+using RaidCrawler.Core.Structures;
+using static SysBot.Pokemon.RotatingRaidSettingsSV;
 
 namespace SysBot.Pokemon.WinForms.WebApi;
 
@@ -189,6 +195,9 @@ public class BotServer(Main mainForm, int port = 9090, int tcpPort = 9091) : IDi
             string? responseString = request.Url?.LocalPath switch
             {
                 "/" => HtmlTemplate,
+                "/api/raid/now" => GetRaidNow(),
+                "/api/raid/queue" => GetRaidQueue(),
+                "/api/raid/add" => AddRaid(request),
                 "/api/bot/instances" => GetInstances(),
                 var path when path?.StartsWith("/api/bot/instances/") == true && path.EndsWith("/bots") =>
                     GetBots(ExtractPort(path)),
@@ -686,6 +695,99 @@ public class BotServer(Main mainForm, int port = 9090, int tcpPort = 9091) : IDi
         }
 
         return QueryRemote(port, "LISTBOTS");
+    }
+
+    // Read-only snapshot of the currently-hosting raid for the public Seed Finder "Now Hosting"
+    // widget. Deliberately omits CurrentCode — the join code stays gated to verified members.
+    private static string GetRaidNow()
+    {
+        var obj = new
+        {
+            active = DashboardState.HasActiveRaid,
+            species = DashboardState.CurrentSpecies,
+            form = DashboardState.CurrentForm,
+            stars = DashboardState.Stars,
+            shiny = DashboardState.IsShiny,
+            tera = DashboardState.TeraTypeEnglish,
+            sprite = DashboardState.SpriteUrl,
+            meta = DashboardState.MetaLine,
+            timer = DashboardState.TimerSecondsRemaining,
+            timerTotal = DashboardState.TimerSecondsTotal,
+            joined = DashboardState.JoinedCount,
+            capacity = DashboardState.JoinedCapacity,
+            completed = DashboardState.CompletedTotal,
+            wins = DashboardState.WinCount,
+            losses = DashboardState.LossCount,
+            uptimeMin = DashboardState.UptimeMinutes,
+            switchOnline = DashboardState.SwitchConnected,
+            discordOnline = DashboardState.DiscordConnected
+        };
+        return JsonSerializer.Serialize(obj);
+    }
+
+    // Upcoming raid lineup for the Seed Finder "Up Next" list. First entry = current/next.
+    private string GetRaidQueue()
+    {
+        try
+        {
+            var raids = GetConfig()?.Hub?.RotatingRaidSV?.ActiveRaids;
+            if (raids == null) return "[]";
+            var list = raids.Where(r => r.ActiveInRotation)
+                .Select(r => new
+                {
+                    species = (int)r.Species,
+                    name = r.Species == Species.None ? "Mystery Shiny Raid" : r.Species.ToString(),
+                    shiny = r.IsShiny,
+                    stars = r.DifficultyLevel,
+                    requested = r.AddedByRACommand
+                })
+                .Take(24).ToList();
+            return JsonSerializer.Serialize(list);
+        }
+        catch { return "[]"; }
+    }
+
+    // Queue a raid by seed (like !ra). Called by the Seed Finder AFTER it has verified the
+    // requester via Discord OAuth + Member role. Not publicly exposed (9090 isn't routed by Cloudflare).
+    private string AddRaid(HttpListenerRequest request)
+    {
+        try
+        {
+            var q = request.QueryString;
+            var seed = (q["seed"] ?? "").Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(seed)) return JsonSerializer.Serialize(new { ok = false, error = "missing seed" });
+            int stars = int.TryParse(q["stars"], out var st) ? st : 6;
+            int progress = Math.Clamp(int.TryParse(q["progress"], out var pr) ? pr : 6, 3, 6);
+            var loc = (q["location"] ?? "Kitakami").ToLowerInvariant();
+            var map = loc == "paldea" ? TeraRaidMapParent.Paldea : loc == "blueberry" ? TeraRaidMapParent.Blueberry : TeraRaidMapParent.Kitakami;
+
+            var config = GetConfig();
+            if (config?.Hub?.RotatingRaidSV == null) return JsonSerializer.Serialize(new { ok = false, error = "config unavailable" });
+
+            int contentType = stars == 6 ? 1 : 0;
+            var (pk, _) = RotatingRaidBotSV.RaidInfoCommand(seed, contentType, map, progress, 0, new List<string>(), false, new List<MoveTypeEmojiInfo>(), 0, false, 2);
+            if (pk == null || pk.Species == 0)
+                return JsonSerializer.Serialize(new { ok = false, error = "could not resolve seed (is the bot connected and hosting?)" });
+
+            var newparam = new RotatingRaidParameters
+            {
+                CrystalType = stars >= 6 ? TeraCrystalType.Black : TeraCrystalType.Base,
+                Species = (Species)pk.Species,
+                SpeciesForm = (byte)pk.Form,
+                DifficultyLevel = stars,
+                StoryProgress = (GameProgressEnum)(progress - 1),
+                Seed = seed,
+                IsCoded = true,
+                IsShiny = pk.IsShiny,
+                AddedByRACommand = true,
+                Title = $"{(pk.IsShiny ? "✦ Shiny " : "")}{(Species)pk.Species} (Web Request)",
+                Description = new[] { "Requested via seeds.pkm-universe.com" },
+                PartyPK = new[] { "" },
+            };
+            config.Hub.RotatingRaidSV.ActiveRaids.Add(newparam);
+            return JsonSerializer.Serialize(new { ok = true, species = ((Species)pk.Species).ToString(), shiny = pk.IsShiny, stars });
+        }
+        catch (Exception ex) { return JsonSerializer.Serialize(new { ok = false, error = ex.Message }); }
     }
 
     private async Task<string> RunCommand(HttpListenerRequest request, int port)
