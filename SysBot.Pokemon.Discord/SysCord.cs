@@ -310,8 +310,14 @@ namespace SysBot.Pokemon.Discord
         ///   raid_get_code → DM the raid code (replaces the ✅ reaction flow)
         ///   raid_rules    → Ephemeral reply with the community raid rules
         /// </summary>
-        private async Task HandleButtonExecutedAsync(SocketMessageComponent component)
+        private Task HandleButtonExecutedAsync(SocketMessageComponent component)
         {
+            // Fire-and-forget: return to the gateway IMMEDIATELY so it can dispatch the next event
+            // (messages, reactions, other buttons). Otherwise Discord.NET awaits this whole method
+            // before processing the next gateway event, and on a busy bot the queued button event
+            // can sit long enough that DeferAsync below blows past Discord's 3-second window.
+            _ = Task.Run(async () =>
+            {
             try
             {
                 // ACK the interaction immediately (within Discord's 3-second window) so a busy bot —
@@ -402,6 +408,8 @@ namespace SysBot.Pokemon.Discord
                 try { await component.FollowupAsync("Something went wrong handling that button. Try again.", ephemeral: true).ConfigureAwait(false); }
                 catch { /* already responded */ }
             }
+            });
+            return Task.CompletedTask;
         }
 
         private async Task HandleReactionAddedAsync(Cacheable<IUserMessage, ulong> cachedMessage,
