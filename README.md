@@ -16,10 +16,16 @@
 > **Raid-SV** is the PKM Universe Reborn community's automated Tera Raid host for Pokémon Scarlet &amp; Violet. Gold-themed throughout, with a live dashboard, one-click Discord buttons, verified-member code delivery, per-trainer raid history, and an auto-posted weekly leaderboard.
 
 ### The bot dashboard
+Live hosting view with the Currently Hosting card, queue, stats, connection panel, live ping graph, and an auto-scrolling Live Feed rail on the right.
 ![Raid-SV Dashboard](docs/screenshots/01-dashboard.png)
 
 ### A PKM Universe raid embed
+Side-by-side: stock upstream embed vs. the PKM Universe rebrand — Tera-colored stripe, visual star bar, live join counter, Get Code + Rules buttons.
 ![Raid embed](docs/screenshots/02-embed.png)
+
+### Analytics — your bot in numbers
+Win-rate trend, Tera-type distribution, raids-per-hour, top reward drops. Built-in, no external dashboard required.
+![Analytics](docs/screenshots/03-analytics.png)
 
 ---
 
