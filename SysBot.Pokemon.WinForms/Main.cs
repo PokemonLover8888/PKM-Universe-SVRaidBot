@@ -20,6 +20,11 @@ namespace SysBot.Pokemon.WinForms
     public sealed partial class Main : Form
     {
         private readonly List<PokeBotState> Bots = new();
+        // Tracks the on-disk mtime of config.json so SaveCurrentConfig can detect
+        // external edits and merge them into memory before saving (otherwise the
+        // autosave / Start handlers would silently overwrite anything the user
+        // changed by editing the file directly).
+        private DateTime _lastConfigWriteTime = DateTime.MinValue;
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         internal ProgramConfig Config { get; set; }
         private IPokeBotRunner RunningEnvironment { get; set; }
@@ -75,6 +80,7 @@ namespace SysBot.Pokemon.WinForms
                 {
                     var lines = File.ReadAllText(Program.ConfigPath);
                     Config = JsonSerializer.Deserialize(lines, ProgramConfigContext.Default.ProgramConfig) ?? new ProgramConfig();
+                    _lastConfigWriteTime = File.GetLastWriteTimeUtc(Program.ConfigPath);
                 }
                 catch (Exception ex)
                 {
@@ -504,12 +510,39 @@ namespace SysBot.Pokemon.WinForms
         {
             try
             {
+                // If the on-disk config has been modified externally since our last save
+                // (manual edits, scripts, another tool), pull those edits into memory
+                // FIRST so we don't silently overwrite them when we serialize and write
+                // back. Without this, Start / Stop / autosave clobber every external
+                // edit on the next save tick.
+                try
+                {
+                    var diskTime = File.GetLastWriteTimeUtc(Program.ConfigPath);
+                    if (_lastConfigWriteTime != DateTime.MinValue && diskTime > _lastConfigWriteTime)
+                    {
+                        var diskJson = File.ReadAllText(Program.ConfigPath);
+                        var diskCfg = JsonSerializer.Deserialize(diskJson, ProgramConfigContext.Default.ProgramConfig);
+                        if (diskCfg?.Hub != null)
+                        {
+                            // Replace only the Hub block (which contains RotatingRaidSV.ActiveRaids
+                            // and every other bot setting) so we keep WinForms wiring intact.
+                            Config.Hub = diskCfg.Hub;
+                            LogUtil.LogInfo("External config edit detected — reloaded Hub from disk before saving (your changes won't be overwritten).", "Config");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogError($"External-edit reload check failed: {ex.Message}", "Config");
+                }
+
                 var cfg = GetCurrentConfiguration();
                 var lines = JsonSerializer.Serialize(cfg, ProgramConfigContext.Default.ProgramConfig);
 
                 string tempPath = Program.ConfigPath + ".tmp";
                 File.WriteAllText(tempPath, lines);
                 File.Move(tempPath, Program.ConfigPath, true);
+                _lastConfigWriteTime = File.GetLastWriteTimeUtc(Program.ConfigPath);
             }
             catch (Exception ex)
             {
