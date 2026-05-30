@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="https://pkm-universe.com/pkm-universe-icon.png" width="120" alt="PKM Universe" />
+<img src="https://creator.pkm-universe.com/pkm-universe-icon.png" width="120" alt="PKM Universe" />
 
 # PKM Universe Raid System
 
 ### Automated Scarlet/Violet Tera Raid hosting for **PKM Universe Reborn**
 
-[![Website](https://img.shields.io/badge/web-pkm--universe.com-d4af37)](https://pkm-universe.com)
+[![Website](https://img.shields.io/badge/web-creator.pkm--universe.com-d4af37)](https://creator.pkm-universe.com)
 [![Discord](https://img.shields.io/badge/discord-PKM%20Universe%20Reborn-5865f2)](https://discord.gg/pkm-universe-reborn)
 
 </div>
@@ -127,7 +127,7 @@ Automatically edits game flags per raid — no need for separate "baby" and "adu
 
 <div align="center">
 
-**PKM Universe Reborn** · [pkm-universe.com](https://pkm-universe.com)
+**PKM Universe Reborn** · [creator.pkm-universe.com](https://creator.pkm-universe.com)
 
 Built on [hexbyt3/SVRaidBot](https://github.com/hexbyt3/SVRaidBot) · Licensed under AGPL-3.0
 
