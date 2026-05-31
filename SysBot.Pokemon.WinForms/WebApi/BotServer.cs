@@ -198,6 +198,7 @@ public class BotServer(Main mainForm, int port = 9090, int tcpPort = 9091) : IDi
                 "/api/raid/now" => GetRaidNow(),
                 "/api/raid/queue" => GetRaidQueue(),
                 "/api/raid/add" => AddRaid(request),
+                "/api/raid/reorder" => ReorderRaids(request),
                 "/api/bot/instances" => GetInstances(),
                 var path when path?.StartsWith("/api/bot/instances/") == true && path.EndsWith("/bots") =>
                     GetBots(ExtractPort(path)),
@@ -786,6 +787,44 @@ public class BotServer(Main mainForm, int port = 9090, int tcpPort = 9091) : IDi
             };
             config.Hub.RotatingRaidSV.ActiveRaids.Add(newparam);
             return JsonSerializer.Serialize(new { ok = true, species = ((Species)pk.Species).ToString(), shiny = pk.IsShiny, stars });
+        }
+        catch (Exception ex) { return JsonSerializer.Serialize(new { ok = false, error = ex.Message }); }
+    }
+
+    // Reorder the ActiveRaids list. Accepts ?order=2,0,1 meaning "take old indices 2 → 0 → 1
+    // and rewrite ActiveRaids in that order". Indexes reference the FILTERED in-rotation list
+    // returned by GetRaidQueue, so they match what the Seed Finder's Up Next strip is showing.
+    private string ReorderRaids(HttpListenerRequest request)
+    {
+        try
+        {
+            var q = request.QueryString["order"];
+            if (string.IsNullOrWhiteSpace(q)) return JsonSerializer.Serialize(new { ok = false, error = "missing order" });
+            var idx = q.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => int.TryParse(s.Trim(), out var n) ? n : -1)
+                .Where(n => n >= 0).ToArray();
+            if (idx.Length == 0) return JsonSerializer.Serialize(new { ok = false, error = "no valid indices" });
+
+            var config = GetConfig();
+            var raids = config?.Hub?.RotatingRaidSV?.ActiveRaids;
+            if (raids == null) return JsonSerializer.Serialize(new { ok = false, error = "config unavailable" });
+
+            // GetRaidQueue filters to .ActiveInRotation in original order — mirror that
+            var inRotation = raids.Where(r => r.ActiveInRotation).ToList();
+            if (idx.Any(i => i >= inRotation.Count)) return JsonSerializer.Serialize(new { ok = false, error = "index out of range" });
+
+            // Build the new in-rotation order; preserve any raids the client didn't reference at the tail
+            var seen = new HashSet<int>();
+            var newInRot = new List<SysBot.Pokemon.RotatingRaidSettingsSV.RotatingRaidParameters>();
+            foreach (var i in idx) { if (seen.Add(i)) newInRot.Add(inRotation[i]); }
+            for (int i = 0; i < inRotation.Count; i++) if (!seen.Contains(i)) newInRot.Add(inRotation[i]);
+
+            // Splice back: keep non-rotation raids in their original spots, rewrite in-rotation ones in new order
+            var pulled = new Queue<SysBot.Pokemon.RotatingRaidSettingsSV.RotatingRaidParameters>(newInRot);
+            for (int i = 0; i < raids.Count; i++)
+                if (raids[i].ActiveInRotation && pulled.Count > 0) raids[i] = pulled.Dequeue();
+
+            return JsonSerializer.Serialize(new { ok = true, count = newInRot.Count });
         }
         catch (Exception ex) { return JsonSerializer.Serialize(new { ok = false, error = ex.Message }); }
     }
