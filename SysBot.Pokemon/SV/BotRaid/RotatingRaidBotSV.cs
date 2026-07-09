@@ -1113,7 +1113,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 Title = "Bot Reset",
                 Description = "The bot encountered an issue and is currently resetting. Please stand by.",
                 Color = Color.Red,
-                ThumbnailUrl = "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/x.png"
+                ThumbnailUrl = "https://creator.pkm-universe.com/rs/spr/imgs/x.png"
             };
             EchoUtil.RaidEmbed(null, "", embed);
 
@@ -1908,70 +1908,26 @@ namespace SysBot.Pokemon.SV.BotRaid
                 return;
             }
 
-            // Create a list of enabled StoryProgressLevels
-            var enabledLevels = new List<GameProgress>();
-            if (mysteryRaidsSettings.Unlocked3StarSettings.Enabled) enabledLevels.Add(GameProgress.Unlocked3Stars);
-            if (mysteryRaidsSettings.Unlocked4StarSettings.Enabled) enabledLevels.Add(GameProgress.Unlocked4Stars);
-            if (mysteryRaidsSettings.Unlocked5StarSettings.Enabled) enabledLevels.Add(GameProgress.Unlocked5Stars);
-            if (mysteryRaidsSettings.Unlocked6StarSettings.Enabled) enabledLevels.Add(GameProgress.Unlocked6Stars);
+            // Mystery Raids MUST reflect the console's REAL story progress. The bot injects only the
+            // seed + crystal type into the den; the species & star count the game actually spawns are
+            // rolled from that seed against the SAVE'S real unlocked progress. The old code picked a
+            // RANDOM story progress to build the preview embed, so whenever that random value differed
+            // from the console's true progress the embed advertised a completely different Pokemon
+            // than the one that actually spawned in-game (the "wrong Pokemon" bug). Anchor to reality.
+            var actualProgress = GameProgress != GameProgress.None ? GameProgress : GameProgress.Unlocked5Stars;
 
-            // Randomly pick a StoryProgressLevel from the enabled levels
-            GameProgress gameProgress = enabledLevels[random.Next(enabledLevels.Count)];
-
-            // Initialize a list to store possible difficulties
-            List<int> possibleDifficulties = [];
-
-            // Determine possible difficulties based on the selected GameProgress
-            switch (gameProgress)
-            {
-                case GameProgress.Unlocked3Stars:
-                    if (mysteryRaidsSettings.Unlocked3StarSettings.Allow1StarRaids) possibleDifficulties.Add(1);
-                    if (mysteryRaidsSettings.Unlocked3StarSettings.Allow2StarRaids) possibleDifficulties.Add(2);
-                    if (mysteryRaidsSettings.Unlocked3StarSettings.Allow3StarRaids) possibleDifficulties.Add(3);
-                    break;
-
-                case GameProgress.Unlocked4Stars:
-                    if (mysteryRaidsSettings.Unlocked4StarSettings.Allow1StarRaids) possibleDifficulties.Add(1);
-                    if (mysteryRaidsSettings.Unlocked4StarSettings.Allow2StarRaids) possibleDifficulties.Add(2);
-                    if (mysteryRaidsSettings.Unlocked4StarSettings.Allow3StarRaids) possibleDifficulties.Add(3);
-                    if (mysteryRaidsSettings.Unlocked4StarSettings.Allow4StarRaids) possibleDifficulties.Add(4);
-                    break;
-
-                case GameProgress.Unlocked5Stars:
-                    if (mysteryRaidsSettings.Unlocked5StarSettings.Allow3StarRaids) possibleDifficulties.Add(3);
-                    if (mysteryRaidsSettings.Unlocked5StarSettings.Allow4StarRaids) possibleDifficulties.Add(4);
-                    if (mysteryRaidsSettings.Unlocked5StarSettings.Allow5StarRaids) possibleDifficulties.Add(5);
-                    break;
-
-                case GameProgress.Unlocked6Stars:
-                    if (mysteryRaidsSettings.Unlocked6StarSettings.Allow3StarRaids) possibleDifficulties.Add(3);
-                    if (mysteryRaidsSettings.Unlocked6StarSettings.Allow4StarRaids) possibleDifficulties.Add(4);
-                    if (mysteryRaidsSettings.Unlocked6StarSettings.Allow5StarRaids) possibleDifficulties.Add(5);
-                    if (mysteryRaidsSettings.Unlocked6StarSettings.Allow6StarRaids) possibleDifficulties.Add(6);
-                    break;
-            }
-
-            // Check if there are any enabled difficulty levels
-            if (possibleDifficulties.Count == 0)
-            {
-                Log("No difficulty levels enabled for the selected Story Progress. Mystery Raids will be turned off.");
-                _settings.RaidSettings.MysteryRaids = false;
-                return;
-            }
-
-            // Randomly pick a difficulty level from the possible difficulties
-            int randomDifficultyLevel = possibleDifficulties[random.Next(possibleDifficulties.Count)];
-
-            // Determine the crystal type based on difficulty level
-            var crystalType = randomDifficultyLevel switch
-            {
-                >= 1 and <= 5 => TeraCrystalType.Base,
-                6 => TeraCrystalType.Black,
-                _ => throw new ArgumentException("Invalid difficulty level.")
-            };
+            // The only spawn-affecting variety we can genuinely inject is Base vs Black crystal, and a
+            // Black (6-star) raid is only valid when the save actually has 6-star unlocked AND the user
+            // left 6-star Mystery Raids enabled. Otherwise always host a Base-crystal raid. The shown
+            // star count still varies naturally because it is rolled from each fresh random seed.
+            bool blackAllowed = actualProgress == GameProgress.Unlocked6Stars
+                                && mysteryRaidsSettings.Unlocked6StarSettings.Enabled
+                                && mysteryRaidsSettings.Unlocked6StarSettings.Allow6StarRaids;
+            bool hostBlack = blackAllowed && random.Next(2) == 0;
+            var crystalType = hostBlack ? TeraCrystalType.Black : TeraCrystalType.Base;
+            int contentType = hostBlack ? 1 : 0;
 
             string seedValue = randomSeed.ToString("X8");
-            int contentType = randomDifficultyLevel == 6 ? 1 : 0;
             TeraRaidMapParent map;
 
             if (!IsBlueberry && !IsKitakami)
@@ -1994,14 +1950,22 @@ namespace SysBot.Pokemon.SV.BotRaid
             int defaultQueuePosition = 0;
             bool defaultIsEvent = false;
 
+            // Pass the REAL story progress (+1, exactly like every other RaidInfoCommand caller) so the
+            // previewed species/Tera type are precisely what this seed produces in-game.
             (PK9 pk, Embed embed) = RaidInfoCommand(
-                seedValue, contentType, map, (int)gameProgress, raidDeliveryGroupID,
+                seedValue, contentType, map, (int)actualProgress + 1, raidDeliveryGroupID,
                 emptyRewardsToShow, defaultMoveTypeEmojis, emptyCustomTypeEmojis,
                 defaultQueuePosition, defaultIsEvent, (int)_settings.EmbedToggles.EmbedLanguage
             );
 
             string teraType = ExtractTeraTypeFromEmbed(embed);
             string[] battlers = GetBattlerForTeraType(teraType);
+
+            // Read the actual star count rolled for this seed straight from the preview embed so the
+            // dashboard's star display matches the embed (DifficultyLevel is display-only).
+            int starCount = CountVisualStars(embed.Author?.Name);
+            if (starCount <= 0)
+                starCount = hostBlack ? 6 : 5;
 
             RotatingRaidParameters newRandomShinyRaid = new()
             {
@@ -2010,8 +1974,8 @@ namespace SysBot.Pokemon.SV.BotRaid
                 SpeciesForm = pk.Form,
                 Title = MysteryRaidTitle,
                 AddedByRACommand = true,
-                DifficultyLevel = randomDifficultyLevel,
-                StoryProgress = (GameProgressEnum)gameProgress,
+                DifficultyLevel = starCount,
+                StoryProgress = (GameProgressEnum)actualProgress,
                 CrystalType = crystalType,
                 IsShiny = true,
                 PartyPK = battlers.Length > 0 ? battlers : [""]
@@ -2079,6 +2043,24 @@ namespace SysBot.Pokemon.SV.BotRaid
                 }
             }
             return "Fairy"; // Default value if something goes wrong
+        }
+
+        /// <summary>
+        /// Counts the filled stars (★) in a raid embed's author name. RaidInfoCommand renders the
+        /// seed-rolled star count as a run of ★ via PkmUniverseTheme.VisualStars, so this recovers
+        /// the true star count for display purposes. Returns 0 if none are found.
+        /// </summary>
+        private static int CountVisualStars(string? authorName)
+        {
+            if (string.IsNullOrEmpty(authorName))
+                return 0;
+            int count = 0;
+            foreach (var ch in authorName)
+            {
+                if (ch == '★')
+                    count++;
+            }
+            return count;
         }
 
         /// <summary>
@@ -2824,7 +2806,10 @@ namespace SysBot.Pokemon.SV.BotRaid
         private async Task<string> GetRaidCode(CancellationToken token)
         {
             var data = await SwitchConnection.PointerPeek(6, Offsets.TeraRaidCodePointer, token).ConfigureAwait(false);
-            var code = Encoding.ASCII.GetString(data);
+            // Store the link code the game generated for this raid into the field so it's used
+            // everywhere (embed, Get Code button DM, disband title). A prior refactor read it into a
+            // throwaway local and returned the never-assigned _teraRaidCode, so every code came out blank.
+            _teraRaidCode = Encoding.ASCII.GetString(data);
             return $"{_teraRaidCode}";
         }
 
@@ -3461,7 +3446,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 turl = RaidExtensions<PK9>.PokeImg(pk, false, false);
             }
             if (_settings.ActiveRaids[_currentRaidIndex].Species is 0)
-                turl = "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/combat.png";
+                turl = "https://creator.pkm-universe.com/rs/spr/imgs/combat.png";
 
             // Fetch the dominant color from the image (used as fallback when Tera color unavailable)
             (int R, int G, int B) dominantColor = await RaidExtensions<PK9>.GetDominantColorAsync(turl).ConfigureAwait(false);
@@ -3575,7 +3560,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             string teraType = RaidEmbedInfoHelpers.RaidSpeciesTeraType;
             string englishTeraType = GetEnglishTypeNameFromLocalized(teraType).ToLower();
             string folderName = _settings.EmbedToggles.SelectedTeraIconType == TeraIconType.Icon1 ? "icon1" : "icon2";
-            string teraIconUrl = $"https://raw.githubusercontent.com/hexbyt3/sprites/main/teraicons/{folderName}/{englishTeraType}.png";
+            string teraIconUrl = $"https://creator.pkm-universe.com/rs/spr/teraicons/{folderName}/{englishTeraType}.png";
 
             // Only include author (header) if not posting 'upnext' embed with the 'Preparing Raid' title
             if (!(upnext && _settings.RaidSettings.TotalRaidsToHost == 0))
@@ -4218,7 +4203,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             Title = "Experiencing Online Connection Issues",
                             Description = "The bot is experiencing issues connecting online. Please stand by as we try to resolve this issue.",
                             Color = Color.Red,
-                            ThumbnailUrl = "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/x.png"
+                            ThumbnailUrl = "https://creator.pkm-universe.com/rs/spr/imgs/x.png"
                         };
                         
                         //You should remove the await keyword since EchoUtil.RaidEmbed returns void, and replace null with an empty byte array to satisfy the non-nullable parameter.
@@ -4744,8 +4729,18 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 _ => 0
             };
 
+            // The Kitakami raid block can expose more den slots than the game actually uses: a 26th
+            // active slot overflows into what is globally Blueberry's first index (94). Enumerating it
+            // assigns that den global index 94, which DeterminePointer/ReadSeedAtIndex both (correctly)
+            // treat as Blueberry — so the seed we READ for it comes from the Kitakami block while any
+            // seed we INJECT lands in the Blueberry block. The two never agree, producing the
+            // unbreakable seed-mismatch / map-refresh loop seen on the Kitakami bot. Cap Kitakami to its
+            // real den count (69-93) so the bot never parks on that phantom boundary den.
+            // Paldea and Blueberry are left reading their full blocks (unchanged, proven behavior).
+            int maxDens = mapType == TeraRaidMapParent.Kitakami ? KitakamiRaidCount : int.MaxValue;
+
             // Process each raid in the data
-            for (int i = 0; i < raidData.Length; i += Raid.SIZE)
+            for (int i = 0; i < raidData.Length && (i / Raid.SIZE) < maxDens; i += Raid.SIZE)
             {
                 var raid = new Raid(raidData.AsSpan()[i..(i + Raid.SIZE)], mapType);
 
@@ -4837,7 +4832,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             if (pkm.Form != 0)
                 pkmform = $"-{pkm.Form}";
 
-            return $"https://raw.githubusercontent.com/zyro670/PokeTextures/main/Placeholder_Sprites/scaled_up_sprites/Shiny/AlternateArt/{pkm.Species}{pkmform}.png";
+            return $"https://creator.pkm-universe.com/rs/alt/Placeholder_Sprites/scaled_up_sprites/Shiny/AlternateArt/{pkm.Species}{pkmform}.png";
         }
 
         /// <summary>
@@ -5313,7 +5308,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
 
             // Build the embed
             var teraTypeLower = strings.Types[teraType].ToLower();
-            var teraIconUrl = $"https://raw.githubusercontent.com/hexbyt3/sprites/main/teraicons/icon1/{teraTypeLower}.png";
+            var teraIconUrl = $"https://creator.pkm-universe.com/rs/spr/teraicons/icon1/{teraTypeLower}.png";
             var disclaimer = $"Current Position: {queuePosition}";
             var titlePrefix = raid.IsShiny ? "Shiny " : "";
             var formName = ShowdownParsing.GetStringFromForm(pk.Form, strings, pk.Species, pk.Context);

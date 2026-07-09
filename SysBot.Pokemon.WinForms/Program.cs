@@ -37,7 +37,7 @@ namespace SysBot.Pokemon.WinForms
             // .NET only injects new pool threads ~1/sec, which delays Discord button-interaction
             // handlers past the 3-second ACK window ("This interaction failed"). Raising the floor
             // keeps ready threads available so handler continuations run immediately.
-            ThreadPool.SetMinThreads(64, 64);
+            ThreadPool.SetMinThreads(256, 256);
 
             var cmd = Environment.GetCommandLineArgs();
             var cfg = Array.Find(cmd, z => z.EndsWith(".json"));

@@ -222,15 +222,19 @@ namespace SysBot.Pokemon.Discord
                         var message = await channel.GetMessageAsync(messageId) as IUserMessage;
                         if (message != null)
                         {
-                            await message.RemoveAllReactionsAsync();
-
                             if (isActive)
                             {
+                                // Freshly-posted raid: nothing to clear yet, so skip the expensive
+                                // (and heavily rate-limited) RemoveAllReactionsAsync — just add ✅.
+                                // Avoiding this needless call cuts the REST pressure that was starving
+                                // the Get Code button's 3-second interaction ACK under load.
                                 await message.AddReactionAsync(new Emoji("✅"));
                                 Log(new LogMessage(LogSeverity.Info, "RaidEmbed", $"Added green check reaction to message {messageId} in channel {channelId}"));
                             }
                             else
                             {
+                                // Raid over: clear the ✅ (and any user reactions) and mark it closed.
+                                await message.RemoveAllReactionsAsync();
                                 await message.AddReactionAsync(new Emoji("🚫"));
                                 Log(new LogMessage(LogSeverity.Info, "RaidEmbed", $"Added red X reaction to message {messageId} in channel {channelId}"));
                             }
@@ -310,20 +314,29 @@ namespace SysBot.Pokemon.Discord
         ///   raid_get_code → DM the raid code (replaces the ✅ reaction flow)
         ///   raid_rules    → Ephemeral reply with the community raid rules
         /// </summary>
-        private Task HandleButtonExecutedAsync(SocketMessageComponent component)
+        private async Task HandleButtonExecutedAsync(SocketMessageComponent component)
         {
-            // Fire-and-forget: return to the gateway IMMEDIATELY so it can dispatch the next event
-            // (messages, reactions, other buttons). Otherwise Discord.NET awaits this whole method
-            // before processing the next gateway event, and on a busy bot the queued button event
-            // can sit long enough that DeferAsync below blows past Discord's 3-second window.
+            // ACK FIRST — inline on the gateway dispatch, BEFORE any Task.Run/thread-pool hop.
+            // Under heavy bot load (constant Switch I/O + REST rate-limiting) the thread pool can't
+            // hand a queued continuation a thread inside Discord's hard 3-second window, so deferring
+            // inside a Task.Run blew past it ("Cannot defer an interaction after 3 seconds"). DeferAsync
+            // is a fast interaction-callback REST call (its own rate-limit bucket exempt from the global
+            // limit), so we run it directly here, then offload the slow work (role check, DM, followup)
+            // to a Task.Run AFTER the ack so the gateway isn't blocked by it.
+            try
+            {
+                await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError($"ButtonExecuted defer failed (interaction likely arrived >3s late): {ex.Message}", nameof(HandleButtonExecutedAsync));
+                return;
+            }
+
             _ = Task.Run(async () =>
             {
             try
             {
-                // ACK the interaction immediately (within Discord's 3-second window) so a busy bot —
-                // e.g. mid game-reboot, when the thread pool is briefly saturated — never returns
-                // "This interaction failed". All replies below go out via FollowupAsync.
-                await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
                 var customId = component.Data.CustomId;
                 switch (customId)
                 {
@@ -371,12 +384,13 @@ namespace SysBot.Pokemon.Discord
                         }
                         try
                         {
+                            var info = SharedRaidCodeHandler.GetRaidInfoDict(messageId);
                             var dm = await component.User.CreateDMChannelAsync().ConfigureAwait(false);
-                            await dm.SendMessageAsync($"Your raid code is **{code}**\nGood luck out there!").ConfigureAwait(false);
+                            // Send the SAME polished card the ✅-reaction path uses, so a claimed code looks identical either way.
+                            await dm.SendMessageAsync(embed: BuildRaidCodeDmEmbed(code, info)).ConfigureAwait(false);
                             await component.FollowupAsync("Code sent — check your DMs!", ephemeral: true).ConfigureAwait(false);
 
                             // Record this claim in the per-trainer history (used by !myraids and the weekly leaderboard).
-                            var info = SharedRaidCodeHandler.GetRaidInfoDict(messageId);
                             string raidTitle = info?.TryGetValue("RaidTitle", out var t) == true ? t : "Raid";
                             bool isShiny = info?.TryGetValue("IsShiny", out var s) == true && bool.TryParse(s, out var sh) && sh;
                             int stars = info?.TryGetValue("DifficultyLevel", out var d) == true && int.TryParse(d, out var dv) ? dv : 0;
@@ -409,7 +423,6 @@ namespace SysBot.Pokemon.Discord
                 catch { /* already responded */ }
             }
             });
-            return Task.CompletedTask;
         }
 
         private async Task HandleReactionAddedAsync(Cacheable<IUserMessage, ulong> cachedMessage,
@@ -427,85 +440,17 @@ namespace SysBot.Pokemon.Discord
             if (string.IsNullOrEmpty(code))
                 return;
             var raidInfoDict = SharedRaidCodeHandler.GetRaidInfoDict(reaction.MessageId);
+            // Offload the REST-heavy DM work so we NEVER block Discord.NET's gateway receive loop.
+            // Event handlers run on that loop; a rate-limited CreateDMChannel/SendMessage here would
+            // freeze the gateway and delay later events — most importantly Get Code button clicks —
+            // past their hard 3-second ACK window ("interaction failed"). Fire-and-forget keeps the
+            // gateway free so interactions are dispatched and acked instantly.
+            _ = Task.Run(async () =>
+            {
             try
             {
                 var dmChannel = await reaction.User.Value.CreateDMChannelAsync();
-                bool isShiny = raidInfoDict != null &&
-                              raidInfoDict.TryGetValue("IsShiny", out var shinyStr) &&
-                              bool.TryParse(shinyStr, out var shinyBool) &&
-                              shinyBool;
-
-                var embedColor = isShiny ? Color.Gold : Color.Blue;
-                string thumbnailUrl = raidInfoDict?.TryGetValue("ThumbnailUrl", out var thumbUrl) == true && !string.IsNullOrEmpty(thumbUrl)
-                    ? thumbUrl
-                    : "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/combat.png";
-
-                var embed = new EmbedBuilder()
-                {
-                    Color = embedColor,
-                    Title = $"**Raid Code: {code}**",
-                    Description = "Please join quickly! The raid will start soon.",
-                    ThumbnailUrl = thumbnailUrl
-                };
-
-                if (raidInfoDict != null)
-                {
-                    string raidTitle = raidInfoDict.TryGetValue("RaidTitle", out var title) ? title : "Pokémon Raid";
-                    string teraIconUrl = raidInfoDict.TryGetValue("TeraIconUrl", out var iconUrl) ? iconUrl : "";
-
-                    embed.WithAuthor(new EmbedAuthorBuilder()
-                    {
-                        Name = raidTitle,
-                        IconUrl = teraIconUrl
-                    });
-
-                    StringBuilder statsBuilder = new StringBuilder();
-                    if (raidInfoDict.TryGetValue("Level", out var level)) statsBuilder.AppendLine($"**Level**: {level}");
-                    if (raidInfoDict.TryGetValue("Gender", out var gender)) statsBuilder.AppendLine($"**Gender**: {gender}");
-                    if (raidInfoDict.TryGetValue("Nature", out var nature)) statsBuilder.AppendLine($"**Nature**: {nature}");
-                    if (raidInfoDict.TryGetValue("Ability", out var ability)) statsBuilder.AppendLine($"**Ability**: {ability}");
-                    if (raidInfoDict.TryGetValue("IVs", out var ivs)) statsBuilder.AppendLine($"**IVs**: {ivs}");
-                    if (raidInfoDict.TryGetValue("Scale", out var scale)) statsBuilder.AppendLine($"**Scale**: {scale}");
-
-                    if (statsBuilder.Length > 0)
-                    {
-                        embed.AddField("**__Stats__**", statsBuilder.ToString(), true);
-                    }
-                    StringBuilder movesBuilder = new StringBuilder();
-                    if (raidInfoDict.TryGetValue("Moves", out var moves) && !string.IsNullOrEmpty(moves))
-                    {
-                        movesBuilder.AppendLine(moves);
-
-                        if (raidInfoDict.TryGetValue("ExtraMoves", out var extraMoves) && !string.IsNullOrEmpty(extraMoves))
-                        {
-                            movesBuilder.AppendLine("**Extra Moves:**");
-                            movesBuilder.AppendLine(extraMoves);
-                        }
-                    }
-
-                    if (movesBuilder.Length > 0)
-                    {
-                        embed.AddField("**__Moves__**", movesBuilder.ToString(), true);
-                    }
-                    else
-                    {
-                        embed.AddField("**__Moves__**", "No Moves To Display", true);
-                    }
-                    if (raidInfoDict.TryGetValue("DifficultyLevel", out var diffLevelStr) &&
-                        int.TryParse(diffLevelStr, out var diffLevel) &&
-                        diffLevel == 7 &&
-                        raidInfoDict.TryGetValue("RaidMechanics", out var mechanics) &&
-                        !string.IsNullOrEmpty(mechanics))
-                    {
-                        embed.AddField("**__7★ Raid Mechanics__**", mechanics, false);
-                    }
-                }
-
-                embed.WithFooter(new EmbedFooterBuilder()
-                {
-                    Text = $"Code requested at {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
-                });
-                await dmChannel.SendMessageAsync(embed: embed.Build());
+                await dmChannel.SendMessageAsync(embed: BuildRaidCodeDmEmbed(code, raidInfoDict));
 
                 try
                 {
@@ -529,6 +474,92 @@ namespace SysBot.Pokemon.Discord
             {
                 Log(new LogMessage(LogSeverity.Error, "RaidCode", $"Failed to send raid code DM: {ex.Message}"));
             }
+            });
+        }
+
+        /// <summary>
+        /// Builds the rich raid-code DM card (species author, Stats/Moves, sprite thumbnail, shiny-gold).
+        /// Shared by BOTH the ✅-reaction path and the 🔑 Get Code button so a claimed code looks identical
+        /// no matter how it was requested.
+        /// </summary>
+        private static Embed BuildRaidCodeDmEmbed(string code, System.Collections.Generic.Dictionary<string, string>? raidInfoDict)
+        {
+            bool isShiny = raidInfoDict != null &&
+                          raidInfoDict.TryGetValue("IsShiny", out var shinyStr) &&
+                          bool.TryParse(shinyStr, out var shinyBool) &&
+                          shinyBool;
+
+            var embedColor = isShiny ? Color.Gold : Color.Blue;
+            string thumbnailUrl = raidInfoDict?.TryGetValue("ThumbnailUrl", out var thumbUrl) == true && !string.IsNullOrEmpty(thumbUrl)
+                ? thumbUrl
+                : "https://creator.pkm-universe.com/rs/spr/imgs/combat.png";
+
+            var embed = new EmbedBuilder()
+            {
+                Color = embedColor,
+                Title = $"**Raid Code: {code}**",
+                Description = "Please join quickly! The raid will start soon.",
+                ThumbnailUrl = thumbnailUrl
+            };
+
+            if (raidInfoDict != null)
+            {
+                string raidTitle = raidInfoDict.TryGetValue("RaidTitle", out var title) ? title : "Pokémon Raid";
+                string teraIconUrl = raidInfoDict.TryGetValue("TeraIconUrl", out var iconUrl) ? iconUrl : "";
+
+                embed.WithAuthor(new EmbedAuthorBuilder()
+                {
+                    Name = raidTitle,
+                    IconUrl = teraIconUrl
+                });
+
+                StringBuilder statsBuilder = new StringBuilder();
+                if (raidInfoDict.TryGetValue("Level", out var level)) statsBuilder.AppendLine($"**Level**: {level}");
+                if (raidInfoDict.TryGetValue("Gender", out var gender)) statsBuilder.AppendLine($"**Gender**: {gender}");
+                if (raidInfoDict.TryGetValue("Nature", out var nature)) statsBuilder.AppendLine($"**Nature**: {nature}");
+                if (raidInfoDict.TryGetValue("Ability", out var ability)) statsBuilder.AppendLine($"**Ability**: {ability}");
+                if (raidInfoDict.TryGetValue("IVs", out var ivs)) statsBuilder.AppendLine($"**IVs**: {ivs}");
+                if (raidInfoDict.TryGetValue("Scale", out var scale)) statsBuilder.AppendLine($"**Scale**: {scale}");
+
+                if (statsBuilder.Length > 0)
+                {
+                    embed.AddField("**__Stats__**", statsBuilder.ToString(), true);
+                }
+                StringBuilder movesBuilder = new StringBuilder();
+                if (raidInfoDict.TryGetValue("Moves", out var moves) && !string.IsNullOrEmpty(moves))
+                {
+                    movesBuilder.AppendLine(moves);
+
+                    if (raidInfoDict.TryGetValue("ExtraMoves", out var extraMoves) && !string.IsNullOrEmpty(extraMoves))
+                    {
+                        movesBuilder.AppendLine("**Extra Moves:**");
+                        movesBuilder.AppendLine(extraMoves);
+                    }
+                }
+
+                if (movesBuilder.Length > 0)
+                {
+                    embed.AddField("**__Moves__**", movesBuilder.ToString(), true);
+                }
+                else
+                {
+                    embed.AddField("**__Moves__**", "No Moves To Display", true);
+                }
+                if (raidInfoDict.TryGetValue("DifficultyLevel", out var diffLevelStr) &&
+                    int.TryParse(diffLevelStr, out var diffLevel) &&
+                    diffLevel == 7 &&
+                    raidInfoDict.TryGetValue("RaidMechanics", out var mechanics) &&
+                    !string.IsNullOrEmpty(mechanics))
+                {
+                    embed.AddField("**__7★ Raid Mechanics__**", mechanics, false);
+                }
+            }
+
+            embed.WithFooter(new EmbedFooterBuilder()
+            {
+                Text = $"Code requested at {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
+            });
+            return embed.Build();
         }
 
         private async Task HandleMessageAsync(SocketMessage arg)

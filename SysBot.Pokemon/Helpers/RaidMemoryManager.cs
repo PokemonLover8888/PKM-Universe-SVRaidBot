@@ -60,9 +60,12 @@ public class RaidMemoryManager(ISwitchConnectionAsync connection, ulong raidBloc
             var data = await _connection.ReadBytesAbsoluteAsync(_raidBlockPointerBase + offset, 4, token).ConfigureAwait(false);
             return BitConverter.ToUInt32(data, 0);
         }
-        else if (index < 93)
+        else if (index < 94)
         {
-            // Kitakami
+            // Kitakami (indices 69-93 = 25 dens). NOTE: this boundary MUST match DeterminePointer's
+            // Kitakami cutoff (also < 94). It was previously < 93, which mis-routed the last Kitakami
+            // den (index 93) to the Blueberry block on reads/verifies while writes correctly went to
+            // Kitakami — guaranteeing a seed mismatch at that den.
             var offset = (ulong)((index - 69) * 0x20);
             var data = await _connection.ReadBytesAbsoluteAsync(_raidBlockPointerKitakami + 0x10 + offset, 4, token).ConfigureAwait(false);
             return BitConverter.ToUInt32(data, 0);

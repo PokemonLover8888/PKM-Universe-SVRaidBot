@@ -21,8 +21,44 @@ public static class WebApiExtensions
     private static CancellationTokenSource? _monitorCts;
     private static Main? _main;
 
-    private const int WebPort = 9090;
+    // Per-bot web port. Each bot folder can override the default 9090 by placing a `webport.txt`
+    // (one integer) next to the EXE, or by setting the RAIDBOT_WEB_PORT env var. This lets several
+    // raid bots (Paldea / Kitakami / Blueberry) run independent web APIs on one machine — each on its
+    // own port, so the master/slave takeover never triggers and the Seed Finder can list/route all of them.
+    private static readonly int WebPort = ResolveWebPort();
     private static int _tcpPort = 0;
+
+    private static int ResolveWebPort()
+    {
+        try
+        {
+            var env = Environment.GetEnvironmentVariable("RAIDBOT_WEB_PORT");
+            if (int.TryParse(env, out var ep) && ep is > 0 and < 65536)
+                return ep;
+
+            // NOTE: this ships as a self-extracting single-file EXE, so AppContext.BaseDirectory
+            // is a temp extraction folder — NOT the bot folder. Read webport.txt from the real
+            // executable's directory (Environment.ProcessPath), then the working dir, then fall back.
+            var candidates = new[]
+            {
+                Path.GetDirectoryName(Environment.ProcessPath ?? ""),
+                Directory.GetCurrentDirectory(),
+                AppContext.BaseDirectory,
+            };
+            foreach (var dir in candidates)
+            {
+                if (string.IsNullOrEmpty(dir)) continue;
+                var file = Path.Combine(dir, "webport.txt");
+                if (File.Exists(file) && int.TryParse(File.ReadAllText(file).Trim(), out var fp) && fp is > 0 and < 65536)
+                    return fp;
+            }
+        }
+        catch
+        {
+            // fall through to default
+        }
+        return 9090;
+    }
 
     public static void InitWebServer(this Main mainForm)
     {

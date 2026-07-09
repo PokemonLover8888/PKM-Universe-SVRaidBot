@@ -62,6 +62,11 @@ namespace SysBot.Pokemon.WinForms
 
         private static async Task<ReleaseInfo?> FetchLatestReleaseAsync()
         {
+            // PKM Universe fork: do NOT phone the upstream (hexbyt3) repo for updates. Returning null
+            // makes every caller treat the bot as up-to-date and skips the network call entirely.
+            await Task.CompletedTask;
+            return null;
+#pragma warning disable CS0162 // unreachable code (kept for reference / future self-hosted update feed)
             using var client = new HttpClient();
             try
             {

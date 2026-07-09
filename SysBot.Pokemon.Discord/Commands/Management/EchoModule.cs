@@ -152,13 +152,13 @@ namespace SysBot.Pokemon.Discord
             // Define a list of available thumbnail URLs
             var thumbnailOptions = new List<string>
     {
-        "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/gengarmegaphone.png",
-        "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/pikachumegaphone.png",
-        "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/umbreonmegaphone.png",
-        "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/sylveonmegaphone.png",
-        "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/charmandermegaphone.png",
-        "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/jigglypuffmegaphone.png",
-        "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/flareonmegaphone.png",
+        "https://creator.pkm-universe.com/rs/spr/imgs/gengarmegaphone.png",
+        "https://creator.pkm-universe.com/rs/spr/imgs/pikachumegaphone.png",
+        "https://creator.pkm-universe.com/rs/spr/imgs/umbreonmegaphone.png",
+        "https://creator.pkm-universe.com/rs/spr/imgs/sylveonmegaphone.png",
+        "https://creator.pkm-universe.com/rs/spr/imgs/charmandermegaphone.png",
+        "https://creator.pkm-universe.com/rs/spr/imgs/jigglypuffmegaphone.png",
+        "https://creator.pkm-universe.com/rs/spr/imgs/flareonmegaphone.png",
     };
 
             // Generate a random index and return the corresponding URL
@@ -184,28 +184,28 @@ namespace SysBot.Pokemon.Discord
             switch (option)
             {
                 case ThumbnailOption.Gengar:
-                    return "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/gengarmegaphone.png";
+                    return "https://creator.pkm-universe.com/rs/spr/imgs/gengarmegaphone.png";
 
                 case ThumbnailOption.Pikachu:
-                    return "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/pikachumegaphone.png";
+                    return "https://creator.pkm-universe.com/rs/spr/imgs/pikachumegaphone.png";
 
                 case ThumbnailOption.Umbreon:
-                    return "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/umbreonmegaphone.png";
+                    return "https://creator.pkm-universe.com/rs/spr/imgs/umbreonmegaphone.png";
 
                 case ThumbnailOption.Sylveon:
-                    return "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/sylveonmegaphone.png";
+                    return "https://creator.pkm-universe.com/rs/spr/imgs/sylveonmegaphone.png";
 
                 case ThumbnailOption.Charmander:
-                    return "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/charmandermegaphone.png";
+                    return "https://creator.pkm-universe.com/rs/spr/imgs/charmandermegaphone.png";
 
                 case ThumbnailOption.Jigglypuff:
-                    return "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/jigglypuffmegaphone.png";
+                    return "https://creator.pkm-universe.com/rs/spr/imgs/jigglypuffmegaphone.png";
 
                 case ThumbnailOption.Flareon:
-                    return "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/flareonmegaphone.png";
+                    return "https://creator.pkm-universe.com/rs/spr/imgs/flareonmegaphone.png";
 
                 default:
-                    return "https://raw.githubusercontent.com/hexbyt3/sprites/main/imgs/gengarmegaphone.png";
+                    return "https://creator.pkm-universe.com/rs/spr/imgs/gengarmegaphone.png";
             }
         }
 
