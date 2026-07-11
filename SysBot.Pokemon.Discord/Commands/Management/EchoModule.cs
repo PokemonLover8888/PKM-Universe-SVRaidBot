@@ -152,13 +152,13 @@ namespace SysBot.Pokemon.Discord
             // Define a list of available thumbnail URLs
             var thumbnailOptions = new List<string>
     {
-        "https://creator.pkm-universe.com/rs/spr/imgs/gengarmegaphone.png",
-        "https://creator.pkm-universe.com/rs/spr/imgs/pikachumegaphone.png",
-        "https://creator.pkm-universe.com/rs/spr/imgs/umbreonmegaphone.png",
-        "https://creator.pkm-universe.com/rs/spr/imgs/sylveonmegaphone.png",
-        "https://creator.pkm-universe.com/rs/spr/imgs/charmandermegaphone.png",
-        "https://creator.pkm-universe.com/rs/spr/imgs/jigglypuffmegaphone.png",
-        "https://creator.pkm-universe.com/rs/spr/imgs/flareonmegaphone.png",
+        $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/gengarmegaphone.png",
+        $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/pikachumegaphone.png",
+        $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/umbreonmegaphone.png",
+        $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/sylveonmegaphone.png",
+        $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/charmandermegaphone.png",
+        $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/jigglypuffmegaphone.png",
+        $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/flareonmegaphone.png",
     };
 
             // Generate a random index and return the corresponding URL
@@ -184,28 +184,28 @@ namespace SysBot.Pokemon.Discord
             switch (option)
             {
                 case ThumbnailOption.Gengar:
-                    return "https://creator.pkm-universe.com/rs/spr/imgs/gengarmegaphone.png";
+                    return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/gengarmegaphone.png";
 
                 case ThumbnailOption.Pikachu:
-                    return "https://creator.pkm-universe.com/rs/spr/imgs/pikachumegaphone.png";
+                    return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/pikachumegaphone.png";
 
                 case ThumbnailOption.Umbreon:
-                    return "https://creator.pkm-universe.com/rs/spr/imgs/umbreonmegaphone.png";
+                    return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/umbreonmegaphone.png";
 
                 case ThumbnailOption.Sylveon:
-                    return "https://creator.pkm-universe.com/rs/spr/imgs/sylveonmegaphone.png";
+                    return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/sylveonmegaphone.png";
 
                 case ThumbnailOption.Charmander:
-                    return "https://creator.pkm-universe.com/rs/spr/imgs/charmandermegaphone.png";
+                    return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/charmandermegaphone.png";
 
                 case ThumbnailOption.Jigglypuff:
-                    return "https://creator.pkm-universe.com/rs/spr/imgs/jigglypuffmegaphone.png";
+                    return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/jigglypuffmegaphone.png";
 
                 case ThumbnailOption.Flareon:
-                    return "https://creator.pkm-universe.com/rs/spr/imgs/flareonmegaphone.png";
+                    return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/flareonmegaphone.png";
 
                 default:
-                    return "https://creator.pkm-universe.com/rs/spr/imgs/gengarmegaphone.png";
+                    return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/gengarmegaphone.png";
             }
         }
 

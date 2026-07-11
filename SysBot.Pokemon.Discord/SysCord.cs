@@ -492,7 +492,7 @@ namespace SysBot.Pokemon.Discord
             var embedColor = isShiny ? Color.Gold : Color.Blue;
             string thumbnailUrl = raidInfoDict?.TryGetValue("ThumbnailUrl", out var thumbUrl) == true && !string.IsNullOrEmpty(thumbUrl)
                 ? thumbUrl
-                : "https://creator.pkm-universe.com/rs/spr/imgs/combat.png";
+                : $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/combat.png";
 
             var embed = new EmbedBuilder()
             {

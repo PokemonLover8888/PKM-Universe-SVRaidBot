@@ -2219,7 +2219,7 @@ namespace SysBot.Pokemon.WinForms
                 SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.IsShiny = true;
                 SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.Stars = 7;
                 SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.TeraTypeEnglish = "Fire";
-                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SpriteUrl = "https://creator.pkm-universe.com/rs/home/256x256/poke_capture_0006_000_mf_s_00000000_f_n.png";
+                SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.SpriteUrl = $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/home/256x256/poke_capture_0006_000_mf_s_00000000_f_n.png";
                 SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.CurrentCode = "GOLDFISH";
                 SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.MetaLine = "7-Star Black Crystal · Mightiest Mark · Lv 100";
                 SysBot.Pokemon.SV.BotRaid.Helpers.DashboardState.MoveList = "Flare Blitz · Air Slash · Dragon Pulse · Roost";

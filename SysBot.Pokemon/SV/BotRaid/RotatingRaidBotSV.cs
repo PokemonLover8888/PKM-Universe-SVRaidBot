@@ -1113,7 +1113,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 Title = "Bot Reset",
                 Description = "The bot encountered an issue and is currently resetting. Please stand by.",
                 Color = Color.Red,
-                ThumbnailUrl = "https://creator.pkm-universe.com/rs/spr/imgs/x.png"
+                ThumbnailUrl = $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/x.png"
             };
             EchoUtil.RaidEmbed(null, "", embed);
 
@@ -3446,7 +3446,7 @@ namespace SysBot.Pokemon.SV.BotRaid
                 turl = RaidExtensions<PK9>.PokeImg(pk, false, false);
             }
             if (_settings.ActiveRaids[_currentRaidIndex].Species is 0)
-                turl = "https://creator.pkm-universe.com/rs/spr/imgs/combat.png";
+                turl = $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/combat.png";
 
             // Fetch the dominant color from the image (used as fallback when Tera color unavailable)
             (int R, int G, int B) dominantColor = await RaidExtensions<PK9>.GetDominantColorAsync(turl).ConfigureAwait(false);
@@ -3560,7 +3560,7 @@ namespace SysBot.Pokemon.SV.BotRaid
             string teraType = RaidEmbedInfoHelpers.RaidSpeciesTeraType;
             string englishTeraType = GetEnglishTypeNameFromLocalized(teraType).ToLower();
             string folderName = _settings.EmbedToggles.SelectedTeraIconType == TeraIconType.Icon1 ? "icon1" : "icon2";
-            string teraIconUrl = $"https://creator.pkm-universe.com/rs/spr/teraicons/{folderName}/{englishTeraType}.png";
+            string teraIconUrl = $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/teraicons/{folderName}/{englishTeraType}.png";
 
             // Only include author (header) if not posting 'upnext' embed with the 'Preparing Raid' title
             if (!(upnext && _settings.RaidSettings.TotalRaidsToHost == 0))
@@ -4203,7 +4203,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                             Title = "Experiencing Online Connection Issues",
                             Description = "The bot is experiencing issues connecting online. Please stand by as we try to resolve this issue.",
                             Color = Color.Red,
-                            ThumbnailUrl = "https://creator.pkm-universe.com/rs/spr/imgs/x.png"
+                            ThumbnailUrl = $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/imgs/x.png"
                         };
                         
                         //You should remove the await keyword since EchoUtil.RaidEmbed returns void, and replace null with an empty byte array to satisfy the non-nullable parameter.
@@ -4832,7 +4832,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
             if (pkm.Form != 0)
                 pkmform = $"-{pkm.Form}";
 
-            return $"https://creator.pkm-universe.com/rs/alt/Placeholder_Sprites/scaled_up_sprites/Shiny/AlternateArt/{pkm.Species}{pkmform}.png";
+            return $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/alt/Placeholder_Sprites/scaled_up_sprites/Shiny/AlternateArt/{pkm.Species}{pkmform}.png";
         }
 
         /// <summary>
@@ -5308,7 +5308,7 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
 
             // Build the embed
             var teraTypeLower = strings.Types[teraType].ToLower();
-            var teraIconUrl = $"https://creator.pkm-universe.com/rs/spr/teraicons/icon1/{teraTypeLower}.png";
+            var teraIconUrl = $"{SysBot.Pokemon.Helpers.RaidSpriteHost.Base}/spr/teraicons/icon1/{teraTypeLower}.png";
             var disclaimer = $"Current Position: {queuePosition}";
             var titlePrefix = raid.IsShiny ? "Shiny " : "";
             var formName = ShowdownParsing.GetStringFromForm(pk.Form, strings, pk.Species, pk.Context);
