@@ -52,7 +52,7 @@ namespace SysBot.Pokemon.Discord
             SysCordSettings.Manager = Manager;
             SysCordSettings.HubConfig = Hub.Config;
 
-            _client = new DiscordSocketClient(new DiscordSocketConfig
+            var socketConfig = new DiscordSocketConfig
             {
                 LogLevel = LogSeverity.Info,
                 GatewayIntents = GatewayIntents.Guilds
@@ -64,7 +64,30 @@ namespace SysBot.Pokemon.Discord
                 MessageCacheSize = 500,
                 AlwaysDownloadUsers = true,
                 ConnectionTimeout = 30000,
-            });
+            };
+
+            // Route REST through the local rate-limit governor when configured.
+            // Why: an IP-level Cloudflare block returns a bare 429 with no X-RateLimit-* headers.
+            // Discord.Net does not recognise it and retries ~20x/second for the full hour, which
+            // keeps the block alive forever (2026-07-15/16 incident, ~1,400 retries/min measured).
+            // The governor absorbs that storm locally so Discord never sees it.
+            // FAIL-OPEN: remove rest-proxy.txt (and clear DISCORD_REST_PROXY) to talk direct.
+            //
+            // rest-proxy.txt beside the exe takes priority: the env var does NOT survive a
+            // double-click launch (Explorer caches its environment), which silently un-routed
+            // three launches on 2026-07-19 and each one stormed the IP.
+            var governorUrl = ResolveRestProxy();
+            if (!string.IsNullOrWhiteSpace(governorUrl))
+            {
+                socketConfig.RestClientProvider = _ => global::Discord.Net.Rest.DefaultRestClientProvider.Instance(governorUrl);
+                LogUtil.LogInfo("SysCord", $"REST routed through rate-limit governor: {governorUrl}");
+            }
+            else
+            {
+                LogUtil.LogInfo("SysCord", "REST is going DIRECT to Discord (no rest-proxy.txt, no DISCORD_REST_PROXY).");
+            }
+
+            _client = new DiscordSocketClient(socketConfig);
             _client.Disconnected += (ex) => HandleDisconnect(ex);
 
             _commands = new CommandService(new CommandServiceConfig
@@ -170,10 +193,78 @@ namespace SysBot.Pokemon.Discord
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Resolves the Discord REST proxy: rest-proxy.txt beside the exe first, then the
+        /// DISCORD_REST_PROXY env var. The file wins because it survives any launch method.
+        /// </summary>
+        private static string? ResolveRestProxy()
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(AppContext.BaseDirectory, "rest-proxy.txt");
+                if (System.IO.File.Exists(path))
+                {
+                    var fromFile = System.IO.File.ReadAllText(path).Trim();
+                    if (!string.IsNullOrWhiteSpace(fromFile) && !fromFile.StartsWith("#"))
+                        return fromFile;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogInfo("SysCord", $"Could not read rest-proxy.txt: {ex.Message}");
+            }
+            return Environment.GetEnvironmentVariable("DISCORD_REST_PROXY");
+        }
+
+        /// <summary>
+        /// Refuses to log in while this IP is rate-limited. Logging in during a block makes
+        /// Discord.Net retry the header-less 429 ~40x/second, which renews the block —
+        /// 1,243 retries in one minute were measured on 2026-07-19.
+        /// </summary>
+        private static async Task WaitForCleanIpAsync(string? proxyBase, CancellationToken token)
+        {
+            var probeUrl = string.IsNullOrWhiteSpace(proxyBase)
+                ? "https://discord.com/api/v10/gateway"
+                : proxyBase.TrimEnd('/') + "/gateway";
+
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            for (var attempt = 1; !token.IsCancellationRequested; attempt++)
+            {
+                System.Net.Http.HttpResponseMessage resp;
+                try
+                {
+                    resp = await http.GetAsync(probeUrl, token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.LogInfo("SysCord", $"Pre-login IP check could not reach {probeUrl}: {ex.Message}. Proceeding.");
+                    return;
+                }
+
+                if (resp.StatusCode != System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    if (attempt > 1)
+                        LogUtil.LogInfo("SysCord", "IP is clear. Logging in.");
+                    return;
+                }
+
+                var wait = TimeSpan.FromMinutes(5);
+                if (resp.Headers.RetryAfter?.Delta is TimeSpan d && d > TimeSpan.Zero)
+                    wait = d + TimeSpan.FromSeconds(30);
+
+                LogUtil.LogInfo("SysCord", $"Discord is rate-limiting this IP (429). Waiting {wait.TotalMinutes:F1} min before login — deliberately NOT retrying. Attempt {attempt}.");
+                await Task.Delay(wait, token).ConfigureAwait(false);
+            }
+        }
+
         public async Task MainAsync(string apiToken, CancellationToken token)
         {
             // Centralize the logic for commands into a separate method.
             await InitCommands().ConfigureAwait(false);
+
+            // Never log in during an active IP block — that is what turns a 1-hour block
+            // into an all-day one.
+            await WaitForCleanIpAsync(ResolveRestProxy(), token).ConfigureAwait(false);
 
             // Login and connect.
             await _client.LoginAsync(TokenType.Bot, apiToken).ConfigureAwait(false);
@@ -586,6 +677,30 @@ namespace SysBot.Pokemon.Discord
                     bool handled = await TryHandleCommandAsync(msg, pos).ConfigureAwait(false);
                     if (handled)
                         return;
+                }
+            }
+
+            // Wrong-prefix recovery: members frequently type the trade bot's "$" prefix out of
+            // muscle memory (e.g. "$rv 023C36D3 6 6"). Accept "$" ONLY for known raid commands so
+            // we never react to ordinary "$" text (like "$5"), run it anyway, then point them to "!".
+            if (!prefixes.Contains("$"))
+            {
+                int wpos = -1;
+                if (msg.HasStringPrefix("$", ref wpos))
+                {
+                    var body = msg.Content.Substring(wpos).TrimStart();
+                    var word = new string(body.TakeWhile(c => !char.IsWhiteSpace(c)).ToArray()).ToLowerInvariant();
+                    string[] raidCmds = { "ra", "rv", "ri", "raidinfo", "aur", "adduserraid" };
+                    if (raidCmds.Contains(word))
+                    {
+                        var correct = prefixes.FirstOrDefault() ?? "!";
+                        bool handled = await TryHandleCommandAsync(msg, wpos).ConfigureAwait(false);
+                        if (handled)
+                        {
+                            await msg.Channel.SendMessageAsync($"ℹ️ This bot uses `{correct}` (e.g. `{correct}ra`), not `$` — I ran it for you this time.").ConfigureAwait(false);
+                            return;
+                        }
+                    }
                 }
             }
         }

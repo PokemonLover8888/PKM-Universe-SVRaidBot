@@ -760,6 +760,10 @@ public class BotServer(Main mainForm, int port = 9090, int tcpPort = 9091) : IDi
             int stars = int.TryParse(q["stars"], out var st) ? st : 6;
             int progress = Math.Clamp(int.TryParse(q["progress"], out var pr) ? pr : 6, 3, 6);
             var loc = (q["location"] ?? "Kitakami").ToLowerInvariant();
+            // Identify the requester so the raid auto-removes after hosting (needs the "'s Requested Raid"
+            // title tag) and so the member can cancel it with !rqc (needs RequestedByUserID).
+            var reqUser = string.IsNullOrWhiteSpace(q["user"]) ? "Web User" : q["user"]!.Trim();
+            ulong.TryParse(q["userid"], out var reqUserId);
             var map = loc == "paldea" ? TeraRaidMapParent.Paldea : loc == "blueberry" ? TeraRaidMapParent.Blueberry : TeraRaidMapParent.Kitakami;
 
             var config = GetConfig();
@@ -781,7 +785,8 @@ public class BotServer(Main mainForm, int port = 9090, int tcpPort = 9091) : IDi
                 IsCoded = true,
                 IsShiny = pk.IsShiny,
                 AddedByRACommand = true,
-                Title = $"{(pk.IsShiny ? "✦ Shiny " : "")}{(Species)pk.Species} (Web Request)",
+                RequestedByUserID = reqUserId,
+                Title = $"{reqUser}'s Requested Raid ({(pk.IsShiny ? "✦ Shiny " : "")}{(Species)pk.Species}, Web)",
                 Description = new[] { "Requested via seeds.pkm-universe.com" },
                 PartyPK = new[] { "" },
             };
