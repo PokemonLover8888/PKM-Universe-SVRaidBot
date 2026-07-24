@@ -4,7 +4,7 @@
     <Platforms>x64</Platforms>
     <StartupObject>SysBot.Pokemon.ConsoleApp.Program</StartupObject>
     <Configurations>Debug;Release;sysbottest</Configurations>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
 	  <LangVersion>13</LangVersion>
   </PropertyGroup>
   <ItemGroup>

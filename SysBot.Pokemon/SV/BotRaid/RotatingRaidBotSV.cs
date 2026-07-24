@@ -4078,52 +4078,11 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
         /// </summary>
         private async Task CurrentRaidInfo(List<string>? names, string code, bool hatTrick, bool disband, bool upnext, bool raidstart, string? imageUrl, bool lobbyFull, CancellationToken token)
         {
-            if (!_settings.RaidSettings.JoinSharedRaidsProgram)
-                return;
-
-            string? encryptedCode = null;
-            if (!string.IsNullOrEmpty(code) && code != "FREE FOR ALL" && code != "IJ0LTU")
-            {
-                encryptedCode = EncryptRaidCode(code);
-            }
-
-            var raidInfo = new
-            {
-                RaidEmbedTitle = CleanEmojiStrings(RaidEmbedEnglishHelpers.RaidEmbedTitle),
-                RaidSpecies = RaidEmbedInfoHelpers.RaidSpecies.ToString(),
-                RaidEmbedInfoHelpers.RaidSpeciesForm,
-                RaidSpeciesGender = CleanEmojiStrings(RaidEmbedEnglishHelpers.RaidSpeciesGender),
-                RaidEmbedInfoHelpers.RaidLevel,
-                RaidEmbedInfoHelpers.RaidSpeciesIVs,
-                RaidEmbedEnglishHelpers.RaidSpeciesAbility,
-                RaidEmbedEnglishHelpers.RaidSpeciesNature,
-                RaidEmbedEnglishHelpers.RaidSpeciesTeraType,
-                Moves = CleanEmojiStrings(RaidEmbedEnglishHelpers.Moves),
-                ExtraMoves = CleanEmojiStrings(RaidEmbedEnglishHelpers.ExtraMoves),
-                RaidEmbedEnglishHelpers.ScaleText,
-                SpecialRewards = CleanEmojiStrings(RaidEmbedEnglishHelpers.SpecialRewards),
-                RaidEmbedInfoHelpers.ScaleNumber,
-                Names = names,
-                Code_encrypted = encryptedCode,
-                HatTrick = hatTrick,
-                Disband = disband,
-                UpNext = upnext,
-                RaidStart = raidstart,
-                ImageUrl = imageUrl,
-                LobbyFull = lobbyFull
-            };
-
-            try
-            {
-                var json = JsonConvert.SerializeObject(raidInfo, Formatting.Indented);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                string raidinfo = Encoding.UTF8.GetString(Convert.FromBase64String("aHR0cHM6Ly9nZW5wa20uY29tL3JhaWRzL3JhaWRfYXBpLnBocA=="));
-                var response = await _httpClient.PostAsync(raidinfo, content, token);
-            }
-            catch
-            {
-                // Silently handle network errors
-            }
+            // Shared-raids reporting stripped 2026-07-16: this used to POST raid details
+            // (species, IVs, participant names, and a decryptable raid code) to genpkm.com,
+            // the upstream fork author's site. Our own sites (seeds.pkm-universe.com) read
+            // this bot's local web API directly, so no outbound reporting is needed.
+            await Task.CompletedTask;
         }
 
         /// <summary>

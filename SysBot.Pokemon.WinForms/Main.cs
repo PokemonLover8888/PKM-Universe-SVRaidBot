@@ -130,6 +130,9 @@ namespace SysBot.Pokemon.WinForms
             StartUpdateCheckTimer();
 
             LogUtil.LogInfo($"Bot initialization complete", "System");
+
+            TryAutoStart();
+
             _ = Task.Run(() =>
             {
                 try
@@ -554,6 +557,50 @@ namespace SysBot.Pokemon.WinForms
         [JsonSourceGenerationOptions(WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
         public sealed partial class ProgramConfigContext : JsonSerializerContext
         { }
+
+        /// <summary>
+        /// Unattended start. Drop an "autostart.txt" next to the exe and the bot presses its own
+        /// START once initialization finishes. Optionally put a millisecond delay in the file
+        /// (e.g. "5000") to stagger multiple bots. No file = unchanged behaviour.
+        /// Added 2026-07-19 to match the trade bots.
+        /// </summary>
+        private void TryAutoStart()
+        {
+            try
+            {
+                var flag = System.IO.Path.Combine(AppContext.BaseDirectory, "autostart.txt");
+                if (!System.IO.File.Exists(flag))
+                    return;
+
+                var delayMs = 3000;
+                var raw = System.IO.File.ReadAllText(flag).Trim();
+                if (int.TryParse(raw, out var parsed) && parsed >= 0 && parsed <= 300000)
+                    delayMs = parsed;
+
+                LogUtil.LogInfo($"autostart.txt found — starting all bots in {delayMs / 1000.0:F1}s (no START click needed).", "System");
+
+                var timer = new System.Windows.Forms.Timer { Interval = Math.Max(250, delayMs) };
+                timer.Tick += (s, e) =>
+                {
+                    timer.Stop();
+                    timer.Dispose();
+                    try
+                    {
+                        B_Start_Click(this, EventArgs.Empty);
+                        LogUtil.LogInfo("autostart: START issued.", "System");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUtil.LogInfo($"autostart failed, click START manually: {ex.Message}", "System");
+                    }
+                };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogInfo($"autostart check failed: {ex.Message}", "System");
+            }
+        }
 
         private void B_Start_Click(object sender, EventArgs e)
         {
