@@ -395,9 +395,9 @@ namespace SysBot.Pokemon
             [DisplayName("Include Current Seed in Embed?")]
             public bool IncludeSeed { get; set; } = true;
 
-            [Category(FeatureToggle), Description("When enabled, the embed will countdown the amount of seconds in \"TimeToWait\" until starting the raid.")]
+            [Category(FeatureToggle), Description("When enabled, the embed will countdown the amount of seconds in \"TimeToWait\" until starting the raid. WARNING: while the raid code is hidden (react-for-code), enabling this SUPPRESSES the in-game lobby screenshot on the embed — countdown and lobby image are either/or. Keep false to show the lobby image.")]
             [DisplayName("Include Countdown Timer in Embed?")]
-            public bool IncludeCountdown { get; set; } = true;
+            public bool IncludeCountdown { get; set; } = false;
 
             [Category(Hosting), Description("If true, the bot will show Type Advantages on embeds.")]
             [DisplayName("Include Type Advantage Hints in Embed?")]
