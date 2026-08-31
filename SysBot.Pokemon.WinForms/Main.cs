@@ -66,6 +66,9 @@ namespace SysBot.Pokemon.WinForms
                 return;
             string discordName = string.Empty;
 
+            if (_customIconPath != null)
+                LogUtil.LogInfo($"Custom window icon: {_customIconPath}", "System");
+
             // Update checker - check silently on startup
             try
             {
@@ -290,6 +293,42 @@ namespace SysBot.Pokemon.WinForms
         {
             return haystack.IndexOf(needle.AsSpan(), StringComparison.OrdinalIgnoreCase) >= 0;
         }
+
+        /// <summary>
+        /// Per-bot window/taskbar/tray icon. Drop a "boticon.ico" next to the EXE and this bot
+        /// uses it instead of the compiled-in Pokeball, so several bots can share one binary and
+        /// still look distinct. No file = unchanged behaviour. Same drop-in pattern as webport.txt.
+        /// Added 2026-08-05 for the three-bot raid fleet (Electivire / Infernape / Greninja).
+        /// </summary>
+        private void ApplyCustomIcon()
+        {
+            try
+            {
+                // Self-extracting single-file EXE: AppContext.BaseDirectory is a temp extraction
+                // folder, NOT the bot folder. Prefer the real executable's directory.
+                var candidates = new[]
+                {
+                    Path.GetDirectoryName(Environment.ProcessPath ?? ""),
+                    Path.GetDirectoryName(Application.ExecutablePath),
+                    Directory.GetCurrentDirectory(),
+                };
+                foreach (var dir in candidates)
+                {
+                    if (string.IsNullOrEmpty(dir)) continue;
+                    var file = Path.Combine(dir, "boticon.ico");
+                    if (!File.Exists(file)) continue;
+                    // Ask for a large frame: the default ctor grabs the 32px system size, which
+                    // Windows then upscales badly for the taskbar on high-DPI displays.
+                    Icon = new Icon(file, new Size(256, 256));
+                    _customIconPath = file;
+                    return;
+                }
+            }
+            catch (Exception ex) { _customIconPath = $"FAILED: {ex.Message}"; }
+        }
+
+        /// <summary>Set by <see cref="ApplyCustomIcon"/> so startup can report what happened.</summary>
+        private static string? _customIconPath;
 
         /// <summary>Delete this process's own SVRaidBot_{pid}.port file. Safe to call repeatedly.</summary>
         private static void CleanupOwnPortFile()

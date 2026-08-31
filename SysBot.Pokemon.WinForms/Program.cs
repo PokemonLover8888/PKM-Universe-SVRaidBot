@@ -24,6 +24,28 @@ namespace SysBot.Pokemon.WinForms
         [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
         private const int SW_RESTORE = 9;
 
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+        private static extern void SetCurrentProcessExplicitAppUserModelID(
+            [MarshalAs(UnmanagedType.LPWStr)] string appID);
+
+        /// <summary>
+        /// Give each bot folder its own taskbar identity. Every bot runs an EXE with the SAME
+        /// filename, so Windows derives one AppUserModelID for all of them, groups their taskbar
+        /// buttons together and reuses whichever icon it cached first — which is why renaming
+        /// boticon.ico alone never changed the taskbar. Stamping a per-folder AppUserModelID makes
+        /// each one a distinct app, so it draws its own window icon. Added 2026-08-05.
+        /// </summary>
+        private static void SetTaskbarIdentity()
+        {
+            try
+            {
+                var folder = Path.GetFileName(WorkingDirectory.TrimEnd('\\', '/'));
+                if (string.IsNullOrEmpty(folder)) return;
+                SetCurrentProcessExplicitAppUserModelID("PKMUniverse.Raid." + folder);
+            }
+            catch { /* cosmetic only — never block startup over a taskbar icon */ }
+        }
+
         /// <summary>
         ///  The main entry point for the application.
         /// </summary>
@@ -38,6 +60,9 @@ namespace SysBot.Pokemon.WinForms
             // handlers past the 3-second ACK window ("This interaction failed"). Raising the floor
             // keeps ready threads available so handler continuations run immediately.
             ThreadPool.SetMinThreads(256, 256);
+
+            // Must run before any window exists, or the taskbar button is already grouped.
+            SetTaskbarIdentity();
 
             var cmd = Environment.GetCommandLineArgs();
             var cfg = Array.Find(cmd, z => z.EndsWith(".json"));

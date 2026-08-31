@@ -761,6 +761,10 @@ namespace SysBot.Pokemon.WinForms
             // Particle panel removed to prevent flickering
             // Controls.Add(particlePanel);
 
+            // Per-bot icon override (boticon.ico next to the EXE) — must run before
+            // ConfigureTrayIcon, which copies the form Icon into the tray.
+            ApplyCustomIcon();
+
             // Configure Tray Icon
             ConfigureTrayIcon();
 

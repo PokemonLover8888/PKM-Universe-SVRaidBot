@@ -72,8 +72,8 @@ public class RaidMemoryManager(ISwitchConnectionAsync connection, ulong raidBloc
         }
         else
         {
-            // Blueberry
-            var offset = (ulong)((index - 93) * 0x20);
+            // Blueberry (indices 94+). Offset MUST match DeterminePointer's Blueberry subtract.
+            var offset = (ulong)((index - 94) * 0x20);
             var data = await _connection.ReadBytesAbsoluteAsync(_raidBlockPointerBlueberry + 0x10 + offset, 4, token).ConfigureAwait(false);
             return BitConverter.ToUInt32(data, 0);
         }
@@ -128,8 +128,10 @@ public class RaidMemoryManager(ISwitchConnectionAsync connection, ulong raidBloc
     /// <returns>List of longs representing the memory pointer</returns>
     private static List<long> DeterminePointer(int index)
     {
-        const int kitakamiDensCount = 25;
-        int blueberrySubtractValue = kitakamiDensCount == 25 ? 93 : 94;
+        // Blueberry starts at global index 94, so its in-block offset is (index - 94).
+        // This was 93, matching an upstream `globalIndex -= 1` in the Blueberry enumeration;
+        // both are gone as of 2026-08-07 so every path uses the canonical boundaries.
+        const int blueberrySubtractValue = 94;
 
         if (index < 69)
         {

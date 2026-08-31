@@ -4709,12 +4709,13 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                     string raidIdentifier = $"{raid.Area}-{raid.LotteryGroup}-{raid.Den}";
                     if (denLocations.TryGetValue(raidIdentifier, out var coordinates))
                     {
+                        // Canonical layout: Paldea 0-68, Kitakami 69-93, Blueberry 94+.
+                        // An upstream `globalIndex -= 1` for Blueberry used to sit here. It pushed
+                        // Blueberry's FIRST den to global index 93 — which both ReadSeedAtIndex and
+                        // DeterminePointer classify as Kitakami (`index < 94`), so that den was read
+                        // and injected in the wrong memory block and could never match. It only ever
+                        // surfaced once a Blueberry bot existed (2026-08-05). Removed 2026-08-07.
                         int globalIndex = startingIndex + (i / Raid.SIZE);
-
-                        if (mapType == TeraRaidMapParent.Blueberry)
-                        {
-                            globalIndex -= 1;
-                        }
 
                         activeRaids.Add((raidIdentifier, coordinates, globalIndex, raid.Seed, raid.Flags, raid.IsEvent));
                     }
@@ -5102,9 +5103,11 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 }
             }
 
-            // Search in Kitakami region
+            // Search in Kitakami region. Bound is the Kitakami DEN COUNT (25), not BlueberryStartIndex
+            // (94) — the old bound scanned ~69 slots of garbage past the real dens, and a chance match
+            // there would hand back a nonsense global index.
             var dataK = await SwitchConnection.ReadBytesAbsoluteAsync(_raidBlockPointerK + 0x10, 0xC80, token).ConfigureAwait(false);
-            for (int i = 0; i < BlueberryStartIndex; i++)
+            for (int i = 0; i < KitakamiRaidCount; i++)
             {
                 var seed = BitConverter.ToUInt32(dataK.AsSpan(i * Raid.SIZE, 4));
                 if (seed == denHexSeedUInt)
@@ -5121,7 +5124,8 @@ ALwkMx63fBR0pKs+jJ8DcFrcJR50aVv1jfIAQpPIK5G6Dk/4hmV12Hdu5sSGLl40
                 var seed = BitConverter.ToUInt32(dataB.AsSpan((i - BlueberryStartIndex) * Raid.SIZE, 4));
                 if (seed == denHexSeedUInt)
                 {
-                    _seedIndexToReplace = i - 1;
+                    // was `i - 1`, the same off-by-one as the enumeration's removed `globalIndex -= 1`
+                    _seedIndexToReplace = i;
                     return;
                 }
             }
