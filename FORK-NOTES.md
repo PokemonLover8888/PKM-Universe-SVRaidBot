@@ -43,16 +43,37 @@ git rebase origin/main
 git cherry-pick <sha>
 
 # 5. Rebuild self-contained EXE
+#    DO NOT add -p:IncludeAllContentForSelfExtract=true (see warning below).
 dotnet publish SysBot.Pokemon.WinForms/SysBot.Pokemon.WinForms.csproj `
   -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true `
+  -p:PublishSingleFile=true `
   -o publish/win-x64
 
-# 6. Deploy to bot folder
-Copy-Item publish/win-x64/PKM-Universe-Raid.exe `
-  C:\Users\ericr\OneDrive\Desktop\Raid-SV-Bot\ -Force
+# 6. Deploy to EVERY bot folder (each holds its own copy of the SAME EXE —
+#    per-bot identity comes from runtime drop-in files, not from the build)
+foreach ($b in 'Electivire-SV-Raid-Bot','Greninja-SV-Raid-Bot','Infernape-SV-Raid-Bot') {
+  Copy-Item publish/win-x64/PKM-Universe-Raid.exe "C:\Users\ericr\OneDrive\Desktop\$b\" -Force
+}
 ```
+
+### WARNING: never publish with IncludeAllContentForSelfExtract
+
+That flag makes the bundle self-extract to a temp folder, which moves `AppContext.BaseDirectory`
+off the bot folder — and the drop-in files are read from there:
+
+| File | Read from | Breaks with self-extract? |
+|---|---|---|
+| `autostart.txt` | `AppContext.BaseDirectory` (`Main.cs`) | **YES** — bot never starts, sits at STOPPED |
+| `rest-proxy.txt` | `AppContext.BaseDirectory` (`SysCord.ResolveRestProxy`) | **YES** — silently stops using the governor |
+| `webport.txt` | `Environment.ProcessPath` first (`WebApiExtensions`) | No — already hardened |
+
+Confirmed the hard way on 2026-08-31: a build with that flag started, served its web API on 9100
+and looked healthy — but `autostart.txt` was never found, so the bot idled at STOPPED and never
+hosted a raid. The tell is a missing "autostart.txt found" line in `logs\SysBotLog.txt`; the web
+API also reports `"Status":"STOPPED"` on `/api/bot/instances`.
+
+`EnableCompressionInSingleFile` is omitted too: the deployed EXEs are ~187 MB uncompressed (a
+compressed build is ~77 MB), and matching the live artifact keeps builds comparable.
 
 ## Why single-file self-contained
 

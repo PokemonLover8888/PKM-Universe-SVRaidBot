@@ -359,3 +359,7 @@ SysBot.Pokemon/SV/BotEncounter/EncounterBotReset.cs
 # Claude Code files
 .claude/
 CLAUDE.md
+
+# Raid-bot local build/scratch output (publish_out holds a ~183MB single-file EXE)
+publish_out/
+*.bak-net9
