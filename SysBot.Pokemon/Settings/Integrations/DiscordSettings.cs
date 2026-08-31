@@ -91,6 +91,36 @@ namespace SysBot.Pokemon
         [DisplayName("Blueberry Raid Channel ID")]
         public ulong BlueberryRaidChannelId { get; set; } = 0;
 
+        public LogEchoSettingsCategory LogEcho { get; set; } = new();
+
+        /// <summary>
+        /// Controls how bot logs reach the Discord logging channels. The relay used to send ONE
+        /// Discord message per log line, which on a raid bot is ~13,000 messages/day and was
+        /// responsible for ~93% of the fleet's Discord 429s (measured 2026-08-30). Nothing here
+        /// affects disk logging — logs\SysBotLog.txt always gets every line.
+        /// </summary>
+        [Category(Operation), TypeConverter(typeof(CategoryConverter<LogEchoSettingsCategory>))]
+        public class LogEchoSettingsCategory
+        {
+            public override string ToString() => "Log Echo Settings";
+
+            [Category(Operation), Description("Collect log lines and send them as ONE Discord message every N seconds instead of one message per line. This is what stops the rate-limit bursts. 0 = send immediately (old behaviour).")]
+            [DisplayName("Batch Seconds")]
+            public int BatchSeconds { get; set; } = 10;
+
+            [Category(Operation), Description("Skip routine raid-loop chatter (lobby/den/seed/offset mechanics) when relaying to Discord. Warnings and errors are ALWAYS relayed regardless. Everything still goes to logs\\SysBotLog.txt.")]
+            [DisplayName("Skip Routine Chatter")]
+            public bool SkipRoutine { get; set; } = true;
+
+            [Category(Operation), Description("Collapse a line that repeats within this many seconds into a single '(+N repeats suppressed)' note. 0 = relay every repeat.")]
+            [DisplayName("Dedupe Seconds")]
+            public int DedupeSeconds { get; set; } = 300;
+
+            [Category(Operation), Description("Extra case-insensitive substrings to skip, separated by ';'. Applied before the keep-warnings rule, so this can silence a noisy warning too.")]
+            [DisplayName("Extra Skip Patterns")]
+            public string ExtraSkipPatterns { get; set; } = string.Empty;
+        }
+
         public AnnouncementSettingsCategory AnnouncementSettings { get; set; } = new();
 
         [Category(Operation), TypeConverter(typeof(CategoryConverter<AnnouncementSettingsCategory>))]
