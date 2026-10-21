@@ -2603,6 +2603,10 @@ namespace SysBot.Pokemon.WinForms
             }
 
             Refresh();
+
+            // Stealth start (starthidden.txt) — done here rather than at Load, because the form
+            // is made visible on the way to Shown and would undo an earlier hide.
+            TryStartHidden();
         }
 
         private int currentSearchIndex = -1;

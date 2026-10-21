@@ -603,6 +603,38 @@ namespace SysBot.Pokemon.WinForms
         /// (e.g. "5000") to stagger multiple bots. No file = unchanged behaviour.
         /// Added 2026-07-19 to match the trade bots.
         /// </summary>
+        /// <summary>
+        /// Stealth start. Drop a "starthidden.txt" next to the exe and the window goes straight to
+        /// the system tray at launch instead of sitting on the desktop. The raid bots run under pm2
+        /// and nobody needs to look at their windows; this is the closest the WinForms build gets to
+        /// the headless trade bots. No file = unchanged behaviour. Same drop-in pattern as
+        /// autostart.txt / webport.txt.
+        ///
+        /// The bot itself is unaffected — it still hosts raids, serves its web API and logs exactly
+        /// as before. To see the window again, double-click the EXE: Program.cs's single-instance
+        /// guard signals the running instance to RestoreFromTray() rather than starting a second
+        /// copy, which is the case it was already written for. Added 2026-09-18.
+        /// </summary>
+        private void TryStartHidden()
+        {
+            try
+            {
+                var flag = System.IO.Path.Combine(AppContext.BaseDirectory, "starthidden.txt");
+                if (!System.IO.File.Exists(flag))
+                    return;
+
+                WindowState = FormWindowState.Minimized;
+                ShowInTaskbar = false;
+                trayIcon.Visible = true;
+                Hide();
+                LogUtil.LogInfo("starthidden.txt found — window sent to the system tray (double-click the EXE or the tray icon to show it).", "System");
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogInfo($"starthidden check failed: {ex.Message}", "System");
+            }
+        }
+
         private void TryAutoStart()
         {
             try
@@ -877,10 +909,54 @@ namespace SysBot.Pokemon.WinForms
             HeaderPanel_Resize(headerPanel, EventArgs.Empty);
         }
 
+        /// <summary>
+        /// The pm2 app name supervising this process ("raid-A"/"raid-B"/"raid-C"), or null when the
+        /// bot was launched by hand. pm2 stamps pm_id and name into every child's environment.
+        /// </summary>
+        private static string? Pm2AppName
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("pm_id")))
+                    return null;
+                var name = Environment.GetEnvironmentVariable("name");
+                return string.IsNullOrEmpty(name) ? "<this bot>" : name;
+            }
+        }
+
         private void ExitApplication()
         {
             var bots = RunningEnvironment;
-            if (bots != null && bots.IsRunning)
+            var running = bots != null && bots.IsRunning;
+            var pm2Name = Pm2AppName;
+
+            // Under pm2, EXIT is not a stop. It aborts the raid in progress, then pm2 relaunches the
+            // bot ~15s later (exp_backoff_restart_delay) and autostart.txt starts it hosting again —
+            // with the window hidden by starthidden.txt, so all the operator sees is a bot that
+            // "went down". Found the hard way on 2026-09-21, when EXIT was clicked on Electivire and
+            // Infernape and both came back on their own. The only real stop is `pm2 stop <app>`.
+            if (pm2Name != null)
+            {
+                var warning =
+                    "This bot is supervised by pm2, so EXIT does not stop it.\n\n"
+                    + (running
+                        ? "Exiting now aborts the raid currently being hosted, and pm2 relaunches the bot about 15 seconds later — hidden in the system tray and hosting again.\n\n"
+                        : "pm2 relaunches the bot about 15 seconds later, hidden in the system tray.\n\n")
+                    + "To actually stop it, run this in a terminal:\n\n"
+                    + $"        pm2 stop {pm2Name}\n\n"
+                    + "Exit anyway?";
+
+                var pm2Result = MessageBox.Show(
+                    warning,
+                    "Managed by pm2 — EXIT will not stop this bot",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2); // default to No: a stray Enter must not kill a raid
+
+                if (pm2Result != DialogResult.Yes)
+                    return;
+            }
+            else if (running)
             {
                 var result = MessageBox.Show(
                     "Bots are currently running. Do you want to stop all bots and exit?",
@@ -890,9 +966,10 @@ namespace SysBot.Pokemon.WinForms
 
                 if (result != DialogResult.Yes)
                     return;
-
-                bots.StopAll();
             }
+
+            if (running)
+                bots!.StopAll();
 
             isExiting = true;
             trayIcon.Dispose();

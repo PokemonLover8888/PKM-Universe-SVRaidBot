@@ -363,3 +363,7 @@ CLAUDE.md
 # Raid-bot local build/scratch output (publish_out holds a ~183MB single-file EXE)
 publish_out/
 *.bak-net9
+
+# Watchdog runtime state + local webhook config (contains a secret) - never commit
+raid-watchdog.state.json
+raid-watchdog.config.json

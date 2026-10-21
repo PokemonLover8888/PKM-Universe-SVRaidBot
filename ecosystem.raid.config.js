@@ -42,12 +42,40 @@ const raid = (name, folder, webPort) => ({
   env: { ...common.env, RAIDBOT_WEB_PORT: String(webPort) },
 });
 
+// The watchdog is plain Node, not a bot EXE, so it does NOT take `common` (no interpreter:'none').
+// It catches the one failure nothing else can see: the game dying while sys-botbase, the process,
+// Discord and the web API all keep reporting healthy. See raid-watchdog.js for the full story.
+const watchdog = {
+  name: 'raid-watchdog',
+  script: 'C:\\Users\\ericr\\source\\repos\\PKM-Universe-SVRaidBot\\raid-watchdog.js',
+  cwd: 'C:\\Users\\ericr\\source\\repos\\PKM-Universe-SVRaidBot',
+  autorestart: true,
+  exp_backoff_restart_delay: 15000,
+  min_uptime: 30000,
+  max_memory_restart: '300M',
+};
+
+// SWSH Keldeo den bot — a DIFFERENT program from the SV raid bots (built from PKM-Universe-SWSHDenRaidBot)
+// whose exe shares its name with the trade bots ("PKM-Universe Bot.exe"): never `taskkill /IM` it, kill by
+// path. Web API port comes from its config.json (ControlPanelPort 8200), not RAIDBOT_WEB_PORT. Its
+// rest-proxy.txt (local governor, same as every other bot since 2026-10-10) wins over the env var; both agree.
+// Replaces START-SWSH-DenRaidBot-Test.bat (renamed .disabled-pm2-owns-it so it can't start a 2nd copy).
+const swshDen = {
+  name: 'raid-D',
+  script: D + 'SWSH-DenRaidBot-Test\\PKM-Universe Bot.exe',
+  cwd: D + 'SWSH-DenRaidBot-Test',
+  ...common,
+  env: { DISCORD_REST_PROXY: 'http://127.0.0.1:3460/api/v10/' },
+};
+
 module.exports = {
   apps: [
+    watchdog,
     // The map each bot works is decided by where its player stands in-game, NOT by config —
     // the maps below are what each bot actually reported on 2026-08-30, not a config setting.
     raid('raid-A', 'Electivire-SV-Raid-Bot', 9090), // Kitakami  — Switch 10.0.0.201, no webport.txt = default 9090
     raid('raid-B', 'Greninja-SV-Raid-Bot',   9110), // Blueberry — Switch 10.0.0.233, webport.txt 9110
     raid('raid-C', 'Infernape-SV-Raid-Bot',  9100), // Paldea    — Switch 10.0.0.25,  webport.txt 9100
+    swshDen,                                        // SWSH dens — Switch 10.0.0.242 (Sword), web 8200
   ],
 };
