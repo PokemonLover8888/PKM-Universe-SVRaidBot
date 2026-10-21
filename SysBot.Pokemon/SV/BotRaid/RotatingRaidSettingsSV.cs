@@ -259,9 +259,17 @@ namespace SysBot.Pokemon
             [Category(Hosting), Description("When enabled, the bot will inject the current day seed to tomorrow's day seed.")]
             public bool KeepDaySeed { get; set; } = true;
 
+            // Defaults to false: KeepDaySeed above already holds the day steady by writing the day
+            // seed in memory, so this is a second, riskier route to the same result. RollBackTime
+            // leaves the game and walks the HOME menu by counting button presses with no check of
+            // what is selected (DDOWN, DRIGHT, DRIGHT, A). Any change to that console's bottom row
+            // shifts the target: on a Switch carrying the GameShare icon the A press opens GameShare,
+            // which starts a local wireless session, drops the console off Wi-Fi and takes
+            // sys-botbase with it. Observed on the Paldea bot 2026-10-21 (nine disconnects in ten
+            // days, 3.5 hours of lost hosting in one morning). Only enable this if KeepDaySeed is off.
             [DisplayName("Prevent Day Changes?")]
-            [Category(FeatureToggle), Description("When enabled, the bot will roll back the time by 5 hours to keep your day from changing.  Be sure that when you start the bot the Switch Time is past 12:01am and before 7:00pm.")]
-            public bool EnableTimeRollBack { get; set; } = true;
+            [Category(FeatureToggle), Description("When enabled, the bot will roll back the time by 5 hours to keep your day from changing.  Leave this off unless 'Keep Current Day Seed' is also off - it exits to the HOME menu and navigates System Settings blind, which can mis-click on consoles whose icon row has changed.  If you do enable it, be sure that when you start the bot the Switch Time is past 12:01am and before 7:00pm.")]
+            public bool EnableTimeRollBack { get; set; } = false;
 
             [DisplayName("Join Shared Raids Program")]
             [Category(Hosting), Description("Enable to join the Shared Raids Program.")]
