@@ -492,6 +492,14 @@ namespace SysBot.Pokemon.WinForms
                 WindowState = FormWindowState.Minimized;
                 ShowInTaskbar = false;
                 trayIcon.Visible = true;
+                // Hide() is what actually gets the window off the screen. Minimizing a form that
+                // is no longer in the taskbar leaves its caption behind as a 160x28 stub parked at
+                // the bottom-left of the desktop - visible, on top, and un-closable, because its X
+                // just runs this handler again. Observed on the Kitakami bot 2026-10-23. The same
+                // three lines in TryStartHidden() have always called Hide(), which is why a bot
+                // started with starthidden.txt sits cleanly in the tray and one sent there by the
+                // X button did not.
+                Hide();
                 trayIcon.ShowBalloonTip(2000, "Raid-SV", "Application minimized to system tray. Right-click → Exit to quit.", ToolTipIcon.Info);
                 return;
             }
