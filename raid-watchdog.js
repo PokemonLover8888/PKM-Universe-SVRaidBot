@@ -23,6 +23,14 @@
  *                                       on a console it cannot see.
  *   DOWN  (console unreachable)      -> alert only.
  *
+ * MEMORY GUARD (added 2026-10-24): pm2's own max_memory_restart is DEAD on this machine -
+ * `pm2 jlist` reports monit.memory = 0 for every single app, so the caps configured on
+ * raid-A..D and host-* have never once fired. raid-D (the SWSH den bot) leaks ~21 MB/s and
+ * had reached 8.9 GB working set before this was noticed. The guard below reads the real
+ * working set from tasklist and restarts a bot that runs away. Limits are deliberately far
+ * above each bot's normal ceiling: this is a runaway net, not a tuning knob. Setting it near
+ * the normal range would restart raid-D roughly once a minute and it would never host a raid.
+ *
  * Config (optional): raid-watchdog.config.json beside this file
  *   { "webhookUrl": "https://discord.com/api/webhooks/...", "staleMinutes": 15 }
  * With no config it still auto-recovers; it just logs instead of pinging you.
@@ -42,6 +50,17 @@ const BOTS = [
   { app: 'raid-C', folder: 'Infernape-SV-Raid-Bot', webPort: 9100 },
 ];
 
+// Runaway-memory net. limitMB must stay well clear of the bot's ordinary peak.
+//   raid-A/B/C idle around 200 MB -> 2000 is ~10x headroom, only a true runaway trips it.
+//   raid-D sawtooths to ~3 GB in normal operation and GC pulls it back; only the 6 GB+
+//   excursions are pathological, so that is where the net sits.
+const MEM_WATCH = [
+  { app: 'raid-A', limitMB: 2000 },
+  { app: 'raid-B', limitMB: 2000 },
+  { app: 'raid-C', limitMB: 2000 },
+  { app: 'raid-D', limitMB: 6000 },
+];
+
 const CFG_PATH = path.join(__dirname, 'raid-watchdog.config.json');
 const STATE_PATH = path.join(__dirname, 'raid-watchdog.state.json');
 
@@ -52,6 +71,9 @@ const DEFAULTS = {
   restartCooldownMin: 20,    // never restart the same bot more often than this
   maxRestartsPerDay: 8,      // beyond this, stop restarting and just shout - something is wrong
   alertRepeatMin: 60,        // don't re-alert the same condition more often than this
+  memCheckSec: 30,           // memory moves far faster than a hang; sweep it on its own clock
+  memCooldownMin: 15,        // never memory-restart the same bot more often than this
+  maxMemRestartsPerDay: 12,  // beyond this, stop restarting and shout instead
 };
 
 function loadCfg() {
@@ -154,6 +176,45 @@ function getBotIp(webPort) {
     );
     req.on('error', () => resolve({ ip: null, status: null }));
     req.on('timeout', () => { req.destroy(); resolve({ ip: null, status: null }); });
+  });
+}
+
+/**
+ * Real working set in MB, straight from tasklist. We do NOT use pm2's monit.memory: on this
+ * machine it returns 0 for every process, which is exactly why max_memory_restart never fired.
+ */
+function processMemoryMB(pid) {
+  return new Promise((resolve) => {
+    execFile('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+      { windowsHide: true, timeout: 15000 }, (err, stdout) => {
+        if (err || !stdout) return resolve(null);
+        // Last CSV field is Mem Usage, e.g. "1,827,436 K" (thousands separators are locale-dependent).
+        const m = stdout.match(/"([\d.,  ]+) K"\s*$/m);
+        if (!m) return resolve(null);
+        const kb = parseInt(m[1].replace(/\D/g, ''), 10);
+        return resolve(Number.isFinite(kb) ? kb / 1024 : null);
+      });
+  });
+}
+
+/** pm2's pid for an app. Cached, because resolving it means spawning pm2. */
+const pidCache = {};
+function pm2Pid(app) {
+  return new Promise((resolve) => {
+    execFile('pm2', ['jlist'], { shell: true, timeout: 30000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err || !stdout) return resolve(null);
+        try {
+          // pm2 can print banner text around the JSON; take the outermost array.
+          const a = stdout.indexOf('[');
+          const b = stdout.lastIndexOf(']');
+          if (a < 0 || b <= a) return resolve(null);
+          const entry = JSON.parse(stdout.slice(a, b + 1)).find((x) => x.name === app);
+          return resolve(entry && entry.pid ? entry.pid : null);
+        } catch {
+          return resolve(null);
+        }
+      });
   });
 }
 
@@ -268,6 +329,74 @@ async function checkBot(bot, cfg, state) {
     `Restart ${count + 1}/${cfg.maxRestartsPerDay} today.`);
 }
 
+async function checkMemory(entry, cfg, state) {
+  const { app, limitMB } = entry;
+
+  let pid = pidCache[app];
+  let mb = pid ? await processMemoryMB(pid) : null;
+  if (mb === null) {
+    // No row for the cached pid: the bot restarted and has a new one.
+    pid = await pm2Pid(app);
+    if (!pid) return;
+    pidCache[app] = pid;
+    mb = await processMemoryMB(pid);
+    if (mb === null) return;
+  }
+
+  if (mb < limitMB) {
+    if (mb > limitMB * 0.75) log(`${app} memory ${Math.round(mb)} MB (limit ${limitMB})`);
+    return;
+  }
+
+  const st = (state[app] = state[app] || { restarts: {}, lastRestart: 0, lastAlert: {} });
+  const day = today();
+  st.memRestarts = st.memRestarts || {};
+  const count = st.memRestarts[day] || 0;
+  const sinceLast = (Date.now() - (st.lastMemRestart || 0)) / 60000;
+
+  if (sinceLast < cfg.memCooldownMin) {
+    log(`${app} over memory limit (${Math.round(mb)} MB) but memory-restarted ${sinceLast.toFixed(0)}m ago - waiting out cooldown`);
+    return;
+  }
+  if (count >= cfg.maxMemRestartsPerDay) {
+    const lastT = st.lastAlert['memgiveup'] || 0;
+    if (Date.now() - lastT >= cfg.alertRepeatMin * 60000) {
+      st.lastAlert['memgiveup'] = Date.now();
+      alert(cfg, `${app}: runaway memory - NOT restarting again`,
+        `Already memory-restarted ${count}x today and it is back at ${Math.round(mb)} MB ` +
+        `(limit ${limitMB} MB). The leak needs a code fix, not another restart.`);
+    }
+    return;
+  }
+
+  log(`${app} RUNAWAY MEMORY: ${Math.round(mb)} MB >= ${limitMB} MB. Restarting.`);
+  const ok = await pm2Restart(app);
+  st.lastMemRestart = Date.now();
+  st.memRestarts[day] = count + 1;
+  delete pidCache[app];
+  alert(cfg, `${app}: auto-restarted (runaway memory)`,
+    `Working set reached ${Math.round(mb)} MB against a ${limitMB} MB limit. ` +
+    `\`pm2 restart ${app}\` ${ok ? 'succeeded' : 'FAILED'}. ` +
+    `Memory restart ${count + 1}/${cfg.maxMemRestartsPerDay} today.`);
+}
+
+async function memSweep() {
+  const cfg = loadCfg();
+  const state = loadState();
+  let touched = false;
+  for (const entry of MEM_WATCH) {
+    try {
+      const before = JSON.stringify(state[entry.app] || null);
+      await checkMemory(entry, cfg, state);
+      if (JSON.stringify(state[entry.app] || null) !== before) touched = true;
+    } catch (e) {
+      log(`${entry.app} memory check failed: ${e.message}`);
+    }
+  }
+  // Only write when something actually changed: the hang sweep owns this file too.
+  if (touched) saveState(state);
+}
+
 async function sweep() {
   const cfg = loadCfg();
   const state = loadState();
@@ -285,6 +414,9 @@ async function sweep() {
   const cfg = loadCfg();
   log(`Raid watchdog started. ${BOTS.length} bots, sweep every ${cfg.checkIntervalSec}s, ` +
       `stale threshold ${cfg.staleMinutes}m, webhook ${cfg.webhookUrl ? 'configured' : 'NOT configured (logs only)'}.`);
+  log(`Memory guard: ${MEM_WATCH.map((m) => `${m.app}<${m.limitMB}MB`).join(' ')}, checked every ${cfg.memCheckSec}s.`);
   await sweep();
   setInterval(sweep, cfg.checkIntervalSec * 1000);
+  await memSweep();
+  setInterval(memSweep, cfg.memCheckSec * 1000);
 })();
