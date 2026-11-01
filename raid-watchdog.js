@@ -48,6 +48,8 @@ const BOTS = [
   { app: 'raid-A', folder: 'Electivire-SV-Raid-Bot', webPort: 9090 },
   { app: 'raid-B', folder: 'Greninja-SV-Raid-Bot', webPort: 9110 },
   { app: 'raid-C', folder: 'Infernape-SV-Raid-Bot', webPort: 9100 },
+  // SWSH den bot: no web API, so its Switch IP is fixed here.
+  { app: 'raid-D', folder: 'SWSH-DenRaidBot-Test', ip: '10.0.0.242' },
 ];
 
 // Runaway-memory net. limitMB must stay well clear of the bot's ordinary peak.
@@ -123,6 +125,21 @@ function getTitleID(ip, timeoutMs = 5000) {
   });
 }
 
+/** SV bots log "2026-10-25 23:19:15.7184|..."; the SWSH den bot logs "10-25-2026 7:47:52.5772 PM|...". */
+function parseLogTime(l) {
+  let m = l.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+  if (m) {
+    const t = new Date(m[1].replace(' ', 'T'));
+    return isNaN(t) ? null : t;
+  }
+  m = l.match(/^(\d{2})-(\d{2})-(\d{4}) (\d{1,2}):(\d{2}):(\d{2})\.\d+ (AM|PM)/);
+  if (!m) return null;
+  let h = parseInt(m[4], 10) % 12;
+  if (m[7] === 'PM') h += 12;
+  const t = new Date(+m[3], +m[1] - 1, +m[2], h, +m[5], +m[6]);
+  return isNaN(t) ? null : t;
+}
+
 /**
  * Age in minutes of the newest RAID line in the bot's log.
  * Discord/gateway lines are excluded on purpose: a hung bot keeps emitting those forever,
@@ -133,27 +150,39 @@ function logAgeMinutes(folder) {
   let text;
   try {
     const size = fs.statSync(file).size;
-    const want = Math.min(size, 256 * 1024);
+    let want = Math.min(size, 256 * 1024);
+    let start = size - want;
+    // UTF-16 is two bytes per code unit. An odd start offset shifts every character by
+    // one byte and decodes the whole tail into garbage, which reads as "no raid line".
+    if (start % 2 !== 0) { start++; want--; }
     const fd = fs.openSync(file, 'r');
     const buf = Buffer.alloc(want);
-    fs.readSync(fd, buf, 0, want, size - want);
+    fs.readSync(fd, buf, 0, want, start);
     fs.closeSync(fd);
     text = buf.toString('utf16le');
   } catch (e) {
-    return { age: null, err: e.message };
+    return { age: null, readOk: false, err: e.message };
   }
 
   const lines = text.split(/\r?\n/);
   for (let i = lines.length - 1; i >= 0; i--) {
     const l = lines[i];
-    if (l.includes('SysCord') || l.includes('Gateway')) continue;
-    const m = l.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
-    if (!m) continue;
-    const t = new Date(m[1].replace(' ', 'T'));
-    if (isNaN(t)) continue;
-    return { age: (Date.now() - t.getTime()) / 60000, last: l.slice(0, 120) };
+    if (l.includes('SysCord') || l.includes('Gateway') ||
+        l.includes('Discord connection lost') || l.includes('Client reconnected')) continue;
+    const t = parseLogTime(l);
+    if (!t) continue;
+    return { age: (Date.now() - t.getTime()) / 60000, last: l.slice(0, 120), readOk: true };
   }
-  return { age: null, err: 'no timestamped raid line found in tail' };
+
+  // Not a read failure: the file opened and decoded, it simply holds no raid line at all.
+  // Report where the tail begins so the caller can put a floor under how long this bot
+  // has been producing nothing but Discord noise.
+  let tailStart = null;
+  for (const l of lines) {
+    const t = parseLogTime(l);
+    if (t) { tailStart = t.getTime(); break; }
+  }
+  return { age: null, readOk: true, tailStart, err: 'no raid line in tail' };
 }
 
 /** The bot's own web API knows which Switch IP it is actually using (survives DHCP drift). */
@@ -218,13 +247,22 @@ function pm2Pid(app) {
   });
 }
 
-function pm2Restart(app) {
+function run(cmd, args) {
   return new Promise((resolve) => {
     // windowsHide: without it, spawning pm2 flashes a console window on the desktop.
-    execFile('pm2', ['restart', app], { shell: true, timeout: 60000, windowsHide: true }, (err) => {
-      resolve(!err);
-    });
+    execFile(cmd, args, { shell: true, timeout: 60000, windowsHide: true }, (err) => resolve(!err));
   });
+}
+
+// pm2's SIGINT does NOT end a WinForms bot on Windows: pm2 marks it stopped, starts a new
+// copy, and the old one keeps driving the same Switch. 2026-10-24 four raid-D copies piled
+// up this way (one per memory restart), fought over the console and crashed its connection.
+// So: stop, force-kill the old process tree, then start.
+async function pm2Restart(app) {
+  const oldPid = await pm2Pid(app);
+  await run('pm2', ['stop', app]);
+  if (oldPid) await run('taskkill', ['/PID', String(oldPid), '/T', '/F']);
+  return run('pm2', ['restart', app]);
 }
 
 function alert(cfg, title, body) {
@@ -255,17 +293,32 @@ function today() {
 
 async function checkBot(bot, cfg, state) {
   const st = (state[bot.app] = state[bot.app] || { restarts: {}, lastRestart: 0, lastAlert: {} });
-  const { ip, status } = await getBotIp(bot.webPort);
-  const { age, last, err } = logAgeMinutes(bot.folder);
+  const { ip, status } = bot.webPort ? await getBotIp(bot.webPort) : { ip: bot.ip, status: null };
+  let { age, last, err, readOk, tailStart } = logAgeMinutes(bot.folder);
 
-  if (age === null) {
+  if (age === null && !readOk) {
     log(`${bot.app} ${bot.folder}: cannot read log (${err})`);
     return;
   }
 
+  // A bot dead long enough for its last raid line to scroll out of the tail has no age at
+  // all. That used to return here, so it escaped every check below and the watchdog went
+  // quiet exactly when the bot was sickest - 2026-10-28, raid-C sat idle 4.5h in silence
+  // because its console had no game loaded. Treat "no raid line" as maximally stale, not
+  // as unknown, and let the diagnosis below work out why.
+  const noRaidLine = age === null;
+  if (noRaidLine) {
+    st.noRaidSince = st.noRaidSince || tailStart || Date.now();
+    age = (Date.now() - st.noRaidSince) / 60000;
+    last = '(no raid line in log tail - only Discord noise)';
+  } else {
+    delete st.noRaidSince;
+  }
+
   const fresh = age < cfg.staleMinutes;
   if (fresh) {
-    log(`${bot.app} OK   log ${age.toFixed(1)}m old, ip=${ip || '?'} status=${status || '?'}`);
+    const what = noRaidLine ? `no raid line yet, ${age.toFixed(1)}m` : `log ${age.toFixed(1)}m old`;
+    log(`${bot.app} OK   ${what}, ip=${ip || '?'} status=${status || '?'}`);
     return;
   }
 
@@ -294,10 +347,16 @@ async function checkBot(bot, cfg, state) {
     if (canAlert('nogame')) {
       alert(cfg, `${bot.folder}: GAME NOT RUNNING`,
         `sys-botbase is alive at ${ip} but getTitleID returned ${title} - no game loaded.\n` +
-        `Raid log silent ${age.toFixed(0)} min. **Relaunch Scarlet/Violet on the console**, ` +
+        `Raid log silent ${age.toFixed(0)} min. **Relaunch the game on the console**, ` +
         `then this watchdog will restart the bot automatically.\n` +
         `A bot restart alone will NOT fix this.`);
     }
+    return;
+  }
+
+  // A bot someone stopped on purpose has a silent log too - leave it stopped.
+  if (!(await pm2Pid(bot.app))) {
+    log(`${bot.app} log ${age.toFixed(0)}m old but not running under pm2 - leaving it alone`);
     return;
   }
 
